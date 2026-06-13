@@ -1,6 +1,6 @@
 [project]
 name = 'metagenomes_simulation'
-version = '0.0.1'
+version = '0.0.2'
 authors = [
   { name='Carlo Mattia Lovecchio', email='carlo.lovecchio@studio.unibo.it' },
 ]
@@ -75,6 +75,10 @@ build-backend = 'setuptools.build_meta'
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["metagenomes_simulation*"]
+
+[tool.coverage.run]
+source = ["src/metagenomes_simulation"]
+omit = ["tests/*"]
 
 [tool.pytest.ini_options]
 minversion = "7.0"
