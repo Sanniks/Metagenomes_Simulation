@@ -1,4 +1,3 @@
-import numpy as np
 import scipy.stats as ss
 
 
@@ -37,7 +36,7 @@ def spearman_correlation(x, y):
 
 
 def kendall_correlation(x, y):
-    """Calculate kendall's correlation coefficient for two set of data in form of an array.
+    """Calculate Kendall's correlation coefficient for two set of data in form of an array.
 
     tau = (C - D) / sqrt((C + D + T_x)(C + D + T_y))
 
@@ -52,7 +51,35 @@ def kendall_correlation(x, y):
         y (array): Second set of data
 
     Returns:
-        float: Spearman's correlation coefficient, between -1 and 1
+        float: Kendall's correlation coefficient, between -1 and 1
     """
     tau, _ = ss.kendalltau(x, y)
     return tau
+
+
+def correlation_coefficient(x, y, correlation_method):
+    """Calculate the correlation coefficient using the selected method.
+
+    Args:
+        x (array): First set of data.
+        y (array): Second set of data.
+        correlation_method (str): Correlation method: "Pearson", "Spearman", or "Kendall".
+
+    Returns:
+        float: Correlation coefficient between x and y.
+
+    Raises:
+        ValueError: If the correlation method is not valid.
+    """
+    correlation_method = correlation_method.casefold()
+    if correlation_method == "pearson":
+        return pearson_correlation(x, y)
+    elif correlation_method == "spearman":
+        return spearman_correlation(x, y)
+    elif correlation_method == "kendall":
+        return kendall_correlation(x, y)
+    else:
+        raise ValueError(
+            "Incorrect value in correlation_method."
+            " Only Pearson, Spearman or Kendall are allowed in correlation_method. "
+        )
