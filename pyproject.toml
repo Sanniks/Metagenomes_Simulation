@@ -41,6 +41,8 @@ dependencies = [
   'scipy>=1.7.0',
   'pandas>=1.3.0',
   'matplotlib>=3.4.0',
+  'networkx',
+  'pathos',
 ]
 
 [project.optional-dependencies]
