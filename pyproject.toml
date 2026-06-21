@@ -1,6 +1,6 @@
 [project]
 name = 'metagenomes_simulation'
-version = '0.0.2'
+version = '0.0.3'
 authors = [
   { name='Carlo Mattia Lovecchio', email='carlo.lovecchio@studio.unibo.it' },
 ]

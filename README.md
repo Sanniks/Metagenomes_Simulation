@@ -4,6 +4,32 @@ This project investigates how microbial interaction networks inferred from metag
 
 The main objective is to study biases introduced during the construction of microbial networks, considering preprocessing steps, normalization methods, and threshold selection strategies.
 
+## How to use
+
+Install the package:
+
+```bash
+python -m pip install -e .
+```
+
+Show the commands:
+
+```bash
+python -m metagenomes_simulation --help
+```
+
+Prepare the processed data:
+
+```bash
+python -m metagenomes_simulation prepare-data
+```
+
+Run the tests:
+
+```bash
+pytest
+```
+
 ## Project Goals
 
 - Analyze real metagenomic datasets.
