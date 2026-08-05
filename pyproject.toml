@@ -1,8 +1,8 @@
 [project]
 name = 'metagenomes_simulation'
-version = '0.0.3'
+version = '0.1.0'
 authors = [
-  { name='Carlo Mattia Lovecchio', email='carlo.lovecchio@studio.unibo.it' },
+  { name='Carlo Mattia Lovecchio', email='carlo.mattia02@gmail.com' },
 ]
 description = 'Simulation and statistical analysis of metagenomic microbial data to investigate correlation biases'
 readme = 'README.md'
@@ -16,7 +16,7 @@ keywords = [
   'network',
 ]
 maintainers = [
-  { name='Carlo Mattia Lovecchio', email='carlo.lovecchio@studio.unibo.it' },
+  { name='Carlo Mattia Lovecchio', email='carlo.mattia02@gmail.com' },
 ]
 classifiers = [
   'Natural Language :: English',
@@ -41,9 +41,13 @@ dependencies = [
   'scipy>=1.7.0',
   'pandas>=1.3.0',
   'matplotlib>=3.4.0',
-  'networkx',
   'pathos',
+  'networkx',
+  'argcomplete',
 ]
+
+[project.scripts]
+metagenomes_simulation = "metagenomes_simulation.__main__:main"
 
 [project.optional-dependencies]
 dev = [
@@ -53,6 +57,7 @@ dev = [
   'black>=22.0',
   'sphinx>=5.0',
   'sphinx-rtd-theme>=1.0',
+  'python-doc-formatter>=0.1.1',
 ]
 test = [
   'pytest>=7.0',
@@ -88,7 +93,7 @@ testpaths = ["tests"]
 python_files = "test_*.py"
 
 [tool.black]
-line-length = 100
+line-length = 79
 target-version = ['py38', 'py39', 'py310', 'py311', 'py312']
 extend-exclude = ''' 
 /(
@@ -99,3 +104,8 @@ extend-exclude = '''
   | \.venv 
   )/
 '''
+
+[tool.pydocfmt]
+line_length = 76
+include = '.*\.py$'
+exclude = '(__pycache__|\.egg-info)'

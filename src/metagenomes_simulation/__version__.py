@@ -2,6 +2,6 @@
 # -*- coding: utf-8 -*-
 
 __author__ = ["Carlo Mattia Lovecchio"]
-__email__ = ["carlo.lovecchio@studio.unibo.it"]
+__email__ = ["carlo.mattia02@gmail.com"]
 
-__version__ = "0.0.3"
+__version__ = "0.1.0"
