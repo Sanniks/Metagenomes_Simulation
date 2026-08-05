@@ -42,7 +42,7 @@ dependencies = [
   'pandas>=1.3.0',
   'matplotlib>=3.4.0',
   'pathos',
-  'networkx',
+  'igraph',
   'argcomplete',
 ]
 
