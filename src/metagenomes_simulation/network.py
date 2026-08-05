@@ -223,11 +223,18 @@ def create_network_from_correlation_matrix(
     if not 0 <= threshold <= 1:
         raise ValueError("threshold must be between 0 and 1.")
 
-    # Copy the input matrix
-    adjacency = correlation_matrix.copy()
+    # Copy the input matrix as numpy array
+    adjacency_np = correlation_matrix.to_numpy(copy=True)
 
     # Removes self-loops
-    np.fill_diagonal(adjacency.values, 0)
+    np.fill_diagonal(adjacency_np, 0)
+
+    # Convert back to a DataFrame
+    adjacency = pd.DataFrame(
+        adjacency_np,
+        index=correlation_matrix.index,
+        columns=correlation_matrix.columns,
+    )
 
     # If an edge is lower to the threshold, it removes it
     adjacency[adjacency.abs() < threshold] = 0
@@ -250,7 +257,7 @@ def create_network_from_correlation_matrix(
 
     # Create a igraph network
     graph_ig = ig.Graph.Weighted_Adjacency(
-        matrix=filtered_correlation_matrix.values,
+        matrix=filtered_correlation_matrix.to_numpy(copy=True),
         mode="undirected",
         attr="weight",
         loops=False,
