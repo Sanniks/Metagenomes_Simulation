@@ -64,7 +64,7 @@ The project is developed primarily in **Python** and makes use of scientific com
 - SciPy
 - Matplotlib
 - scikit-learn
-- NetworkX
+- igraph
 
 ## Repository Structure
 
