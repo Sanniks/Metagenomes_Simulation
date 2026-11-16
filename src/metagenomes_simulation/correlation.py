@@ -1,17 +1,18 @@
 import scipy.stats as ss
 
+
 def measure_correlation_coefficient(x, y, correlation_method):
     """Calculate the correlation coefficient using the selected method.
-    -Pearson correlation: r = cov(x,y)/(std(x)std(y))
-    -Spearman's correlation coefficient: rho = pearson_corralation(rank(x),rank(y))
-    where rank(x) transforms the values in the x array into their corresponding ranks in
-    the sorted order.
-    -Kendall's correlation coefficient: tau = (C - D) / sqrt((C + D + T_x)(C + D + T_y))
-    where: C = number of concordant pairs (pairs where x and y change in the
-    same direction) D = number of discordant pairs (pairs where x and y
-    change in opposite directions) T_x = number of ties only in x T_y =
-    number of ties only in y
-    
+    -Pearson correlation: r = cov(x,y)/(std(x)std(y)) -Spearman's
+    correlation coefficient: rho = pearson_corralation(rank(x),rank(y))
+    where rank(x) transforms the values in the x array into their
+    corresponding ranks in the sorted order. -Kendall's correlation
+    coefficient: tau = (C - D) / sqrt((C + D + T_x)(C + D + T_y)) where: C =
+    number of concordant pairs (pairs where x and y change in the same
+    direction) D = number of discordant pairs (pairs where x and y change in
+    opposite directions) T_x = number of ties only in x T_y = number of ties
+    only in y
+
     Args:
         x (array): First set of data.
         y (array): Second set of data.

@@ -63,7 +63,9 @@ def test_pearson_correlation_coefficient_perfect_negative(x):
     assume(not np.allclose(x, x[0]))  # Remove cases where x is constant
     x = np.array(x)
     y = -3 * x
-    assert measure_correlation_coefficient(x, y, "pearson") == pytest.approx(-1)
+    assert measure_correlation_coefficient(x, y, "pearson") == pytest.approx(
+        -1
+    )
 
 
 @given(
@@ -132,7 +134,9 @@ def test_spearman_correlation_coefficient_perfect_positive(x):
     assume(not np.allclose(x, x[0]))  # Remove cases where x is constant
     x = np.array(x)
     y = 3 * x
-    assert measure_correlation_coefficient(x, y, "spearman") == pytest.approx(1)
+    assert measure_correlation_coefficient(x, y, "spearman") == pytest.approx(
+        1
+    )
 
 
 @given(
@@ -152,7 +156,9 @@ def test_spearman_correlation_coefficient_perfect_negative(x):
     assume(not np.allclose(x, x[0]))  # Remove cases where x is constant
     x = np.array(x)
     y = -3 * x
-    assert measure_correlation_coefficient(x, y, "spearman") == pytest.approx(-1)
+    assert measure_correlation_coefficient(x, y, "spearman") == pytest.approx(
+        -1
+    )
 
 
 @given(
@@ -187,6 +193,7 @@ def test_spearman_is_between_minus_one_and_one(x, y):
 # --------------------------------------------------------------------------------------------
 # TEST kendall_correlation
 # --------------------------------------------------------------------------------------------
+
 
 def test_kendall_raise_error_for_different_array_dimentions():
     """This tests that the kendall correlation function raises an error for
@@ -240,7 +247,9 @@ def test_kendall_correlation_coefficient_perfect_negative(x):
     assume(not np.allclose(x, x[0]))  # Remove cases where x is constant
     x = np.array(x)
     y = -3 * x
-    assert measure_correlation_coefficient(x, y, "kendall") == pytest.approx(-1)
+    assert measure_correlation_coefficient(x, y, "kendall") == pytest.approx(
+        -1
+    )
 
 
 @given(
