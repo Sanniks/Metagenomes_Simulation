@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from metagenomes_simulation.data_processing import (
+from metagenomes_simulation.normalization import (
     absolute_to_relative_abundance,
 )
 
@@ -36,13 +36,14 @@ def create_block_correlation(
         pd.DataFrame: Block correlation matrix with OTUs in rows and
             columns.
     """
-    # Invalid inputs
+    # between_correlation and within_correlation check
     if not 0 <= between_correlation <= within_correlation <= 1:
         raise ValueError(
             "correlations must be between 0 and 1 and 'between_correlation'"
             " must be lower than 'within_correlation'"
         )
 
+    # block_sizes check
     if not isinstance(block_sizes, (list, tuple)) or len(block_sizes) == 0:
         raise ValueError("block_sizes must be a non-empty list.")
     if any(not isinstance(size, int) or size <= 0 for size in block_sizes):
@@ -62,8 +63,7 @@ def create_block_correlation(
     # Insert 1 to every diagonal element
     np.fill_diagonal(correlation_matrix, 1)
 
-    n_otus = np.sum(block_sizes)
-    otu_names = [f"OTU_{i + 1}" for i in range(n_otus)]
+    otu_names = [f"OTU_{i + 1}" for i in range(total_taxa)]
 
     correlation_matrix_df = pd.DataFrame(
         correlation_matrix,
@@ -160,14 +160,14 @@ def create_sparse_correlation(
     correlation_matrix[rows[selected], columns[selected]] = weights
     correlation_matrix[columns[selected], rows[selected]] = weights
 
-    # Scale off-diagonal values to guarantee positive
-    # semidefiniteness (Normalization)
-    row_sum = np.sum(np.abs(correlation_matrix), axis=1)
-    row_sum_no_diagonal = row_sum - 1
-    maximum_row_sum = np.max(row_sum_no_diagonal)
-    if maximum_row_sum > 1:
-        off_diagonal = correlation_matrix - np.eye(n_taxa)
-        correlation_matrix = np.eye(n_taxa) + off_diagonal / maximum_row_sum
+    # Scale off-diagonal values to obtain a
+    #  positive definite correlation matrix.
+    off_diagonal = correlation_matrix - np.eye(n_taxa)
+    minimum_eigenvalue = np.linalg.eigvalsh(off_diagonal).min()
+    epsilon = 1e-6
+    if minimum_eigenvalue < -(1 - epsilon):
+        scale = (1 - epsilon) / abs(minimum_eigenvalue)
+        correlation_matrix = np.eye(n_taxa) + scale * off_diagonal
 
     otu_names = [f"OTU{i + 1}" for i in range(n_taxa)]
 
@@ -178,6 +178,115 @@ def create_sparse_correlation(
     )
 
     return correlation_matrix_df
+
+
+def create_sparse_block_correlation(
+    block_sizes=[15, 20],
+    within_density=0.5,
+    between_density=0.02,
+    correlation_range=(0.2, 0.6),
+    random_state=None,
+):
+    """Create a sparse positive semidefinite block correlation matrix.
+
+    Edges are sampled using different probabilities within and between
+    communities. The function also returns the community of each OTU.
+
+    Args:
+        block_sizes (list[int]): Number of taxa in each community. Defaults
+            to [15, 20].
+        within_density (float): Probability of creating an edge between taxa
+            belonging to the same community. Defaults to 0.5.
+        between_density (float): Probability of creating an edge between
+            taxa belonging to different communities. Defaults to 0.02.
+        random_state (int, optional): Seed used for reproducible random
+            generation. If None, fresh entropy is used. Defaults to None.
+
+    Raises:
+        `ValueError`: If densities, block sizes, or random_state are
+                invalid.
+
+    Returns:
+        tuple[pd.DataFrame, np.ndarray]: Correlation matrix and community
+            membership of each OTU.
+    """
+    # between_density and within_density check
+    if not 0 <= between_density <= within_density <= 1:
+        raise ValueError(
+            "correlations must be between 0 and 1 and 'between_density'"
+            " must be lower than 'within_density'"
+        )
+
+        # correlation_range check
+    if (
+        not isinstance(correlation_range, (list, tuple))
+        or len(correlation_range) != 2
+        or not isinstance(correlation_range[0], (int, float))
+        or not isinstance(correlation_range[1], (int, float))
+        or not 0 <= correlation_range[0] <= correlation_range[1] < 1
+    ):
+        raise ValueError(
+            " correlation_range must contain two ordered values"
+            " between 0 inclusive and 1 exclusive. Correlation = 1"
+            " means that two taxa are perfectly linearly dependent"
+            " and it reduces the dimension of the correlation matrix"
+        )
+
+    # block_sizes check
+    if not isinstance(block_sizes, (list, tuple)) or len(block_sizes) == 0:
+        raise ValueError("block_sizes must be a non-empty list.")
+    if any(not isinstance(size, int) or size <= 0 for size in block_sizes):
+        raise ValueError("block_sizes must contain positive integers.")
+
+    # random_state check
+    if random_state is not None and not isinstance(random_state, int):
+        raise ValueError("random_state must be an integer or None.")
+
+    correlation_memberships = np.repeat(
+        np.arange(len(block_sizes)), block_sizes
+    )
+    rng = np.random.default_rng(random_state)
+
+    n_taxa = sum(block_sizes)
+
+    correlation_matrix = np.eye(n_taxa)
+
+    for i in range(n_taxa):
+        for j in range(i + 1, n_taxa):
+
+            same_community = (
+                correlation_memberships[i] == correlation_memberships[j]
+            )
+
+            if same_community:
+                edge_probability = within_density
+            else:
+                edge_probability = between_density
+
+            if rng.random() < edge_probability:
+                weight = rng.uniform(
+                    correlation_range[0], correlation_range[1]
+                )
+
+                correlation_matrix[i, j] = weight
+                correlation_matrix[j, i] = weight
+
+    # Scale off-diagonal values to obtain a
+    #  positive definite correlation matrix.
+    off_diagonal = correlation_matrix - np.eye(n_taxa)
+    minimum_eigenvalue = np.linalg.eigvalsh(off_diagonal).min()
+    epsilon = 1e-6
+    if minimum_eigenvalue < -(1 - epsilon):
+        scale = (1 - epsilon) / abs(minimum_eigenvalue)
+        correlation_matrix = np.eye(n_taxa) + scale * off_diagonal
+
+    otu_names = [f"OTU_{i + 1}" for i in range(n_taxa)]
+    correlation_matrix_df = pd.DataFrame(
+        correlation_matrix,
+        index=otu_names,
+        columns=otu_names,
+    )
+    return correlation_matrix_df, correlation_memberships
 
 
 def simulate_absolute_abundances_ground_truth(
@@ -399,3 +508,33 @@ def simulate_sequencing(
         columns=relative_abundance_matrix.columns,
     )
     return sequencing_df
+
+
+def generate_gaussian_noise(otu_df, mean=0, std=1, seed=None, relative=False):
+    """Add Gaussian noise to an OTU dataframe.
+
+    Negative values are clipped to zero. If relative is True, each row is
+    normalized so that its total abundance is equal to 1.
+
+    Args:
+        otu_df (pd.DataFrame): OTU abundance dataframe.
+        mean (float, optional): Mean of the Gaussian noise. Defaults to 0.
+        std (float, optional): Standard deviation of the Gaussian noise.
+            Defaults to 1.
+        seed (int, optional): Seed for reproducible random noise. Defaults
+            to None.
+        relative (bool, optional): If True, convert noisy abundances to
+            relative abundances. Defaults to False.
+
+    Returns:
+        pd.DataFrame: OTU dataframe with added Gaussian noise.
+    """
+    rng = np.random.default_rng(seed)
+
+    noise = rng.normal(mean, std, otu_df.shape)
+    otu_noise = otu_df + noise
+    otu_noise = otu_noise.clip(lower=0)
+
+    if relative:
+        otu_noise = absolute_to_relative_abundance(otu_noise)
+    return otu_noise

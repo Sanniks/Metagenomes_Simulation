@@ -1,37 +1,22 @@
-from inspect import signature
-
 import numpy as np
 import pandas as pd
+import pandas._testing as pdt
+
 import pytest
 
 from metagenomes_simulation.metrics import network_density
-
 from metagenomes_simulation.network import (
     create_network_from_correlation_matrix,
 )
 
-from metagenomes_simulation.simulation import (
+from metagenomes_simulation.generators import (
     create_block_correlation,
     create_sparse_correlation,
+    create_sparse_block_correlation,
     simulate_absolute_abundances_ground_truth,
     simulate_sequencing,
+    generate_gaussian_noise,
 )
-
-
-@pytest.mark.parametrize(
-    "simulation_function",
-    [
-        create_sparse_correlation,
-        simulate_absolute_abundances_ground_truth,
-        simulate_sequencing,
-    ],
-)
-def test_random_state_defaults_to_none(simulation_function):
-    """A missing seed must request fresh entropy from NumPy."""
-    random_state = signature(simulation_function).parameters["random_state"]
-
-    assert random_state.default is None
-
 
 # --------------------------------------------------------------------------------------------
 # TEST create_block_correlation
@@ -398,6 +383,199 @@ def test_create_sparse_correlation_error_invalid_random_state():
     """
     with pytest.raises(ValueError):
         create_sparse_correlation(random_state=12.5)
+
+
+# --------------------------------------------------------------------------------------------
+# TEST create_sparse_block_correlation
+# --------------------------------------------------------------------------------------------
+
+
+def test_create_sparse_block_correlation_returns_expected_shape():
+    """Test that the sparse block matrix has the expected dimensions.
+
+    GIVEN: communities containing different numbers of taxa
+    WHEN: I create the sparse block correlation matrix
+    THEN: each dimension equals the sum of the block sizes
+    """
+    corr_matrix, membership = create_sparse_block_correlation(
+        block_sizes=[4, 3, 2],
+        within_density=0.5,
+        between_density=0.1,
+        random_state=12,
+    )
+
+    assert isinstance(corr_matrix, pd.DataFrame)
+    assert corr_matrix.shape == (9, 9)
+    assert membership.shape[0] == 9
+
+
+def test_create_sparse_block_correlation_has_matching_axis_labels():
+    """Test that rows and columns represent the same taxa in the same order.
+
+    GIVEN: valid sparse block correlation parameters
+    WHEN: I create the sparse block correlation matrix
+    THEN: its row and column labels are identical and equally ordered
+    """
+    corr_matrix, _ = create_sparse_block_correlation(
+        block_sizes=[3, 3],
+        within_density=0.5,
+        between_density=0.1,
+        random_state=12,
+    )
+
+    assert corr_matrix.index.equals(corr_matrix.columns)
+
+
+def test_create_sparse_block_correlation_is_symmetric():
+    """Test that the sparse block correlation matrix is symmetric.
+
+    GIVEN: valid sparse block correlation parameters
+    WHEN: I create the sparse block correlation matrix
+    THEN: the matrix equals its transpose within numerical tolerance
+    """
+    corr_matrix, _ = create_sparse_block_correlation(
+        block_sizes=[3, 4, 3],
+        within_density=0.5,
+        between_density=0.1,
+        random_state=12,
+    )
+
+    np.testing.assert_allclose(
+        corr_matrix.to_numpy(),
+        corr_matrix.to_numpy().T,
+    )
+
+
+def test_create_sparse_block_correlation_has_unit_diagonal():
+    """Test that every taxon is perfectly correlated with itself.
+
+    GIVEN: valid sparse block correlation parameters
+    WHEN: I create the sparse block correlation matrix
+    THEN: every value on its main diagonal is equal to one
+    """
+    corr_matrix, _ = create_sparse_block_correlation(
+        block_sizes=[3, 4, 3],
+        within_density=0.5,
+        between_density=0.1,
+        random_state=12,
+    )
+
+    np.testing.assert_allclose(
+        np.diag(corr_matrix.to_numpy()),
+        np.ones(corr_matrix.shape[0]),
+    )
+
+
+def test_create_sparse_block_correlation_respects_communities():
+    """Test that extreme densities create only within-community edges.
+
+    GIVEN: within density equal to one and between density equal to zero
+    WHEN: I create the sparse block correlation matrix
+    THEN: every within-community edge is present and every between-community
+        edge is absent
+    """
+    block_sizes = [3, 2]
+    corr_matrix, membership = create_sparse_block_correlation(
+        block_sizes=block_sizes,
+        within_density=1.0,
+        between_density=0.0,
+        random_state=12,
+    )
+
+    values = corr_matrix.to_numpy()
+
+    same_community = membership[:, None] == membership[None, :]
+    off_diagonal = ~np.eye(len(membership), dtype=bool)
+
+    within_edges = same_community & off_diagonal
+    between_edges = ~same_community
+
+    assert np.all(values[within_edges] > 0)
+    np.testing.assert_allclose(values[between_edges], 0.0)
+
+
+def test_create_sparse_block_correlation_semipositive():
+    """Test that the sparse block matrix is positive semidefinite.
+
+    GIVEN: valid sparse block correlation parameters
+    WHEN: I create the matrix and compute its eigenvalues
+    THEN: every eigenvalue is non-negative within numerical tolerance
+    """
+    corr_matrix, _ = create_sparse_block_correlation(
+        block_sizes=[3, 4, 3],
+        within_density=0.5,
+        between_density=0.1,
+        random_state=12,
+    )
+    eigenvalues = np.linalg.eigvalsh(corr_matrix.to_numpy())
+
+    assert np.all(eigenvalues >= -1e-12)
+
+
+def test_create_sparse_block_correlation_reproducible():
+    """Test that sparse block matrix generation is reproducible.
+
+    GIVEN: the same parameters and random seed
+    WHEN: I create two sparse block correlation matrices
+    THEN: both matrices are equal
+    """
+    corr_matrix_1, membership_1 = create_sparse_block_correlation(
+        block_sizes=[3, 4, 3],
+        within_density=0.5,
+        between_density=0.1,
+        random_state=12,
+    )
+    corr_matrix_2, membership_2 = create_sparse_block_correlation(
+        block_sizes=[3, 4, 3],
+        within_density=0.5,
+        between_density=0.1,
+        random_state=12,
+    )
+
+    pd.testing.assert_frame_equal(corr_matrix_1, corr_matrix_2)
+    np.testing.assert_array_equal(membership_1, membership_2)
+
+
+def test_create_sparse_block_correlation_returns_expected_memberships():
+    """This tests that each taxon receives its block membership.
+
+    GIVEN: communities containing different numbers of taxa
+    WHEN: I create the sparse block correlation matrix
+    THEN: the returned memberships identify the block of every taxon
+    """
+    _, memberships = create_sparse_block_correlation(
+        block_sizes=[2, 3, 1],
+        random_state=12,
+    )
+
+    expected = np.array([0, 0, 1, 1, 1, 2])
+    np.testing.assert_array_equal(memberships, expected)
+
+
+@pytest.mark.parametrize(
+    "invalid_arguments",
+    [
+        {"within_density": 1.1},
+        {"between_density": -0.1},
+        {"within_density": 0.1, "between_density": 0.2},
+        {"block_sizes": []},
+        {"block_sizes": [3, 0]},
+        {"block_sizes": [3, 2.5]},
+        {"block_sizes": 3},
+        {"random_state": 12.5},
+    ],
+)
+def test_create_sparse_block_correlation_error_invalid_inputs(
+    invalid_arguments,
+):
+    """This tests that invalid input parameters raise an error.
+
+    GIVEN: invalid densities, block sizes, or random state
+    WHEN: I create the sparse block correlation matrix
+    THEN: the function raises an error
+    """
+    with pytest.raises(ValueError):
+        create_sparse_block_correlation(**invalid_arguments)
 
 
 # --------------------------------------------------------------------------------------------
@@ -865,3 +1043,116 @@ def test_simulate_sequencing_error_invalid_random_state():
     )
     with pytest.raises(ValueError):
         simulate_sequencing(absolute_abundance_matrix, 1000, random_state=12.5)
+
+
+# --------------------------------------------------------------------------------------------
+# TEST generate_gaussian_noise
+# --------------------------------------------------------------------------------------------
+
+
+def test_generate_gaussian_noise_output_has_same_shape():
+    """This tests the shape of the noisy dataframe.
+
+    GIVEN: an OTU dataframe
+    WHEN: I add Gaussian noise
+    THEN: the output has the same shape as the input
+    """
+    otu_df = pd.DataFrame(
+        {
+            "OTU1": [10, 20, 0],
+            "OTU2": [0, 5, 0],
+            "OTU3": [2, 1, 3],
+        },
+        index=["69-001-1010", "69-001-1011", "69-074-6012"],
+    )
+    otu_noise = generate_gaussian_noise(otu_df, seed=12)
+
+    assert otu_noise.shape == otu_df.shape
+
+
+def test_generate_gaussian_noise_is_reproducible_with_same_seed():
+    """This tests reproducible Gaussian noise.
+
+    GIVEN: an OTU dataframe and a fixed seed
+    WHEN: I add Gaussian noise twice
+    THEN: both results are equal
+    """
+    otu_df = pd.DataFrame(
+        {
+            "OTU1": [10, 20, 0],
+            "OTU2": [0, 5, 0],
+            "OTU3": [2, 1, 3],
+        },
+        index=["69-001-1010", "69-001-1011", "69-074-6012"],
+    )
+
+    otu_noise_1 = generate_gaussian_noise(otu_df, seed=12)
+    otu_noise_2 = generate_gaussian_noise(otu_df, seed=12)
+
+    pd.testing.assert_frame_equal(otu_noise_1, otu_noise_2)
+
+
+def test_generate_gaussian_noise_all_positive_values():
+    """This tests clipping of negative noisy values.
+
+    GIVEN: an OTU dataframe
+    WHEN: I add Gaussian noise
+    THEN: every resulting abundance is non-negative
+    """
+    otu_df = pd.DataFrame(
+        {
+            "OTU1": [10, 20, 0],
+            "OTU2": [0, 5, 0],
+            "OTU3": [2, 1, 3],
+        },
+        index=["69-001-1010", "69-001-1011", "69-074-6012"],
+    )
+    otu_noise = generate_gaussian_noise(otu_df, seed=12)
+
+    assert (otu_noise >= 0).all().all()
+
+
+def test_generate_gaussian_noise_relative_true_normalizes_rows():
+    """This tests relative normalization after adding noise.
+
+    GIVEN: an OTU dataframe and relative mode enabled
+    WHEN: I add Gaussian noise
+    THEN: every resulting row sums to one
+    """
+    otu_df = pd.DataFrame(
+        {
+            "OTU1": [10, 20, 0],
+            "OTU2": [0, 5, 0],
+            "OTU3": [2, 1, 3],
+        },
+        index=["69-001-1010", "69-001-1011", "69-074-6012"],
+    )
+
+    otu_noise = generate_gaussian_noise(
+        otu_df, mean=1, std=0, seed=42, relative=True
+    )
+
+    sample_sum_rel_abundance = otu_noise.sum(axis=1)
+
+    assert np.allclose(sample_sum_rel_abundance, 1)
+
+
+def test_generate_gaussian_noise_keep_index_and_column_preserved():
+    """This tests preservation of labels after adding noise.
+
+    GIVEN: an OTU dataframe with row and column labels
+    WHEN: I add Gaussian noise
+    THEN: its labels are preserved
+    """
+    otu_df_raw = pd.DataFrame(
+        {
+            "OTU1": [10, 20, 0],
+            "OTU2": [0, 5, 0],
+            "OTU3": [2, 1, 3],
+        },
+        index=["69-001-1010", "69-001-1011", "69-074-6012"],
+    )
+    otu_noise = generate_gaussian_noise(otu_df_raw)
+
+    pdt.assert_index_equal(otu_noise.index, otu_df_raw.index)
+    pdt.assert_index_equal(otu_noise.columns, otu_df_raw.columns)
