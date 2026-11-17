@@ -1,0 +1,465 @@
+import pytest
+
+import pandas as pd
+import pandas._testing as pdt
+
+import numpy as np
+
+from metagenomes_simulation.normalization import (
+    absolute_to_relative_abundance,
+    absolute_to_clr_abundance,
+    remove_constant_otus,
+    substitute_zero,
+)
+
+# --------------------------------------------------------------------------------------------
+# TEST absolute_to_relative_abundance
+# --------------------------------------------------------------------------------------------
+
+
+def test_absolute_to_relative_abundance_expected():
+    """This tests the relative-abundance calculation.
+
+    GIVEN: a dataframe containing absolute abundances
+    WHEN: I convert it to relative abundances
+    THEN: the expected proportions are returned
+    """
+    otu_df_raw = pd.DataFrame(
+        {
+            "OTU1": [10, 20, 0],
+            "OTU2": [0, 5, 0],
+            "OTU3": [2, 1, 3],
+        },
+        index=["69-001-1010", "69-001-1011", "69-074-6012"],
+    )
+
+    otu_expected = pd.DataFrame(
+        {
+            "OTU1": [10 / 12, 20 / 26, 0 / 3],
+            "OTU2": [0 / 12, 5 / 26, 0 / 3],
+            "OTU3": [2 / 12, 1 / 26, 3 / 3],
+        },
+        index=["69-001-1010", "69-001-1011", "69-074-6012"],
+    )
+    otu_df_rel = absolute_to_relative_abundance(otu_df_raw)
+
+    pdt.assert_frame_equal(otu_expected, otu_df_rel)
+
+
+def test_absolute_to_relative_abundance_sum_of_every_row_equal_to_one():
+    """This tests the sum of relative abundances.
+
+    GIVEN: samples with positive total abundances
+    WHEN: I convert them to relative abundances
+    THEN: every row sums to one
+    """
+    otu_df_raw = pd.DataFrame(
+        {
+            "OTU1": [10, 20, 0],
+            "OTU2": [0, 5, 3],
+            "OTU3": [2, 1, 4],
+        },
+        index=["69-001-1010", "69-001-1011", "69-074-6012"],
+    )
+    otu_df_rel = absolute_to_relative_abundance(otu_df_raw)
+    sample_sum_rel_abundance = otu_df_rel.sum(axis=1)
+    assert np.allclose(sample_sum_rel_abundance, [1, 1, 1])
+
+
+def test_absolute_to_relative_abundance_empty_sample():
+    """This tests a sample containing only zeros.
+
+    GIVEN: a sample with zero total abundance
+    WHEN: I convert it to relative abundances
+    THEN: the sample remains a row of zeros
+    """
+    otu_df_raw = pd.DataFrame(
+        {
+            "OTU1": [10, 20, 0],
+            "OTU2": [0, 5, 0],
+            "OTU3": [2, 1, 0],
+        },
+        index=["69-001-1010", "69-001-1011", "69-074-6012"],
+    )
+    otu_df_rel = absolute_to_relative_abundance(otu_df_raw)
+    sample_sum_rel_abundance = otu_df_rel.sum(axis=1)
+    assert np.allclose(sample_sum_rel_abundance, [1, 1, 0])
+
+
+def test_absolute_to_relative_abundance_keep_index_and_column_preserved():
+    """This tests preservation of labels.
+
+    GIVEN: an abundance dataframe with row and column labels
+    WHEN: I convert it to relative abundances
+    THEN: its labels are preserved
+    """
+    otu_df_raw = pd.DataFrame(
+        {
+            "OTU1": [10, 20, 0],
+            "OTU2": [0, 5, 0],
+            "OTU3": [2, 1, 3],
+        },
+        index=["69-001-1010", "69-001-1011", "69-074-6012"],
+    )
+    otu_df_rel = absolute_to_relative_abundance(otu_df_raw)
+
+    pdt.assert_index_equal(otu_df_rel.index, otu_df_raw.index)
+    pdt.assert_index_equal(otu_df_rel.columns, otu_df_raw.columns)
+
+
+# --------------------------------------------------------------------------------------------
+# TEST substitute_zero
+# --------------------------------------------------------------------------------------------
+
+
+def test_substitute_zero_default_delta_expected():
+    """The default replacement is computed separately for each sample."""
+    otu_df = pd.DataFrame(
+        [[2, 2, 0, 0], [0, 1, 3, 4]],
+        index=["Sample1", "Sample2"],
+        columns=["OTU1", "OTU2", "OTU3", "OTU4"],
+    )
+    expected = np.array(
+        [
+            [0.4375, 0.4375, 0.0625, 0.0625],
+            [0.0625, 0.1171875, 0.3515625, 0.46875],
+        ]
+    )
+
+    result = substitute_zero(otu_df)
+
+    np.testing.assert_allclose(result, expected)
+    np.testing.assert_allclose(result.sum(axis=1), np.ones(2))
+    assert np.all(result > 0)
+
+
+def test_substitute_zero_custom_delta_expected():
+    """A custom delta is assigned to zeros and rescales positive values."""
+    otu_df = pd.DataFrame(
+        [[10, 5, 0], [0, 3, 9]],
+        columns=["OTU1", "OTU2", "OTU3"],
+    )
+    expected = np.array([[0.66, 0.33, 0.01], [0.01, 0.2475, 0.7425]])
+
+    result = substitute_zero(otu_df, delta=0.01)
+
+    np.testing.assert_allclose(result, expected)
+
+
+def test_substitute_zero_without_zeros_returns_proportions():
+    """Without zeros, the function only closes each sample to proportions."""
+    otu_df = pd.DataFrame(
+        [[2, 3, 5], [1, 4, 2]],
+        columns=["OTU1", "OTU2", "OTU3"],
+    )
+    expected = np.array([[0.2, 0.3, 0.5], [1 / 7, 4 / 7, 2 / 7]])
+
+    result = substitute_zero(otu_df)
+
+    np.testing.assert_allclose(result, expected)
+
+
+def test_substitute_zero_removes_constant_otus():
+    """Constant OTUs are removed before the replacement is calculated."""
+    otu_df = pd.DataFrame(
+        [[5, 2, 0], [5, 3, 4]],
+        columns=["constant", "OTU1", "OTU2"],
+    )
+    expected = np.array([[0.75, 0.25], [3 / 7, 4 / 7]])
+
+    result = substitute_zero(otu_df)
+
+    np.testing.assert_allclose(result, expected)
+    assert result.shape == (2, 2)
+
+
+def test_substitute_zero_does_not_modify_input():
+    """The input dataframe is not modified in place."""
+    otu_df = pd.DataFrame(
+        [[2, 0, 1], [1, 3, 0]],
+        columns=["OTU1", "OTU2", "OTU3"],
+    )
+    original = otu_df.copy(deep=True)
+
+    substitute_zero(otu_df)
+
+    pdt.assert_frame_equal(otu_df, original)
+
+
+def test_substitute_zero_rejects_negative_abundances():
+    """Negative abundances are rejected."""
+    otu_df = pd.DataFrame(
+        [[1, -1], [2, 3]],
+        columns=["OTU1", "OTU2"],
+    )
+
+    with pytest.raises(ValueError, match="Abundances cannot be negative"):
+        substitute_zero(otu_df)
+
+
+def test_substitute_zero_rejects_zero_total_sample():
+    """A sample containing only zeros is rejected."""
+    otu_df = pd.DataFrame(
+        [[0, 0], [1, 2]],
+        columns=["OTU1", "OTU2"],
+    )
+
+    with pytest.raises(
+        ValueError, match="Samples cannot have total abundance zero"
+    ):
+        substitute_zero(otu_df)
+
+
+# --------------------------------------------------------------------------------------------
+# TEST absolute_to_clr_abundance
+# --------------------------------------------------------------------------------------------
+
+
+def test_absolute_to_clr_abundance_expected():
+    """This tests the centered log-ratio calculation.
+
+    GIVEN: a dataframe containing positive abundances
+    WHEN: I apply the CLR transformation
+    THEN: the expected centered logarithms are returned
+    """
+    otu_df_abs = pd.DataFrame(
+        {
+            "OTU1": [10, 20, 1],
+            "OTU2": [1, 5, 1],
+            "OTU3": [2, 1, 3],
+        },
+        index=["69-001-1010", "69-001-1011", "69-074-6012"],
+    )
+
+    otu_expected = pd.DataFrame(
+        {
+            "OTU1": [np.log(10), np.log(20), np.log(1)],
+            "OTU2": [np.log(1), np.log(5), np.log(1)],
+            "OTU3": [np.log(2), np.log(1), np.log(3)],
+        },
+        index=["69-001-1010", "69-001-1011", "69-074-6012"],
+    )
+    otu_expected = otu_expected.sub(otu_expected.mean(axis=1), axis=0)
+    otu_df_clr = absolute_to_clr_abundance(otu_df_abs)
+
+    pdt.assert_frame_equal(otu_expected, otu_df_clr)
+
+
+def test_absolute_to_clr_abundance_zero_behaviour():
+    """This tests multiplicative zero replacement during CLR transformation.
+
+    GIVEN: an abundance dataframe containing a zero
+    WHEN: I apply the CLR transformation
+    THEN: the zero is multiplicatively replaced before taking the logarithm
+    """
+    otu_df_abs = pd.DataFrame(
+        {
+            "OTU1": [10, 20, 1],
+            "OTU2": [0, 5, 1],
+            "OTU3": [2, 1, 3],
+        },
+        index=["69-001-1010", "69-001-1011", "69-074-6012"],
+    )
+
+    otu_expected = pd.DataFrame(
+        {
+            "OTU1": [20 / 27, 20 / 26, 1 / 5],
+            "OTU2": [1 / 9, 5 / 26, 1 / 5],
+            "OTU3": [4 / 27, 1 / 26, 3 / 5],
+        },
+        index=["69-001-1010", "69-001-1011", "69-074-6012"],
+    )
+    otu_expected = np.log(otu_expected)
+    otu_expected = otu_expected.sub(otu_expected.mean(axis=1), axis=0)
+    otu_df_clr = absolute_to_clr_abundance(otu_df_abs)
+
+    pdt.assert_frame_equal(otu_expected, otu_df_clr)
+
+
+def test_absolute_to_clr_abundance_keep_index_and_column_preserved():
+    """This tests preservation of labels after CLR transformation.
+
+    GIVEN: an abundance dataframe with row and column labels
+    WHEN: I apply the CLR transformation
+    THEN: its labels are preserved
+    """
+    otu_df_abs = pd.DataFrame(
+        {
+            "OTU1": [10, 20, 1],
+            "OTU2": [1, 5, 1],
+            "OTU3": [2, 1, 3],
+        },
+        index=["69-001-1010", "69-001-1011", "69-074-6012"],
+    )
+
+    otu_df_clr = absolute_to_clr_abundance(otu_df_abs)
+
+    pdt.assert_index_equal(otu_df_abs.index, otu_df_clr.index)
+    pdt.assert_index_equal(otu_df_abs.columns, otu_df_clr.columns)
+
+
+def test_absolute_to_clr_abundance_rejects_negative_delta():
+    """This tests a negative multiplicative-replacement value.
+
+    GIVEN: an abundance dataframe containing zeros
+    WHEN: I apply CLR with a negative delta value
+    THEN: the function raises an error
+    """
+    otu_df = pd.DataFrame(
+        {
+            "OTU1": [10, 20, 0],
+            "OTU2": [0, 5, 3],
+            "OTU3": [2, 1, 4],
+        },
+        index=["69-001-1010", "69-001-1011", "69-074-6012"],
+    )
+
+    with pytest.raises(ValueError):
+        absolute_to_clr_abundance(otu_df, delta=-1)
+
+
+def test_absolute_to_clr_abundance_rejects_negative_abundances():
+    """This tests negative abundance values.
+
+    GIVEN: an abundance dataframe containing a negative value
+    WHEN: I apply the CLR transformation
+    THEN: the function raises an error
+    """
+    otu_df = pd.DataFrame(
+        {
+            "OTU1": [10, 20, 0],
+            "OTU2": [0, 5, 3],
+            "OTU3": [2, -1, 4],
+        },
+        index=["69-001-1010", "69-001-1011", "69-074-6012"],
+    )
+
+    with pytest.raises(ValueError):
+        absolute_to_clr_abundance(otu_df)
+
+
+def test_absolute_to_clr_abundance_uses_default_delta_when_none():
+    """This tests the default multiplicative-replacement value.
+
+    GIVEN: an abundance dataframe containing zeros
+    WHEN: I apply CLR with None as delta
+    THEN: the default value 1 / D**2 is used
+    """
+    otu_df = pd.DataFrame(
+        {
+            "OTU1": [10, 20, 0],
+            "OTU2": [0, 5, 3],
+            "OTU3": [2, 1, 4],
+        },
+        index=["69-001-1010", "69-001-1011", "69-074-6012"],
+    )
+
+    n_components = otu_df.shape[1]
+    expected = absolute_to_clr_abundance(
+        otu_df,
+        delta=1 / n_components**2,
+    )
+
+    result = absolute_to_clr_abundance(otu_df, delta=None)
+
+    pdt.assert_frame_equal(result, expected)
+
+
+# --------------------------------------------------------------------------------------------
+# TEST remove_constant_otus
+# --------------------------------------------------------------------------------------------
+
+
+def test_remove_constant_otus_remove_empty_columns():
+    """This tests removal of an all-zero OTU.
+
+    GIVEN: an OTU dataframe with an all-zero column
+    WHEN: I clean the dataframe
+    THEN: the all-zero column is removed
+    """
+    otu_df_raw = pd.DataFrame(
+        {
+            "OTU1": [10, 20, 0],
+            "OTU2": [0, 0, 0],
+            "OTU3": [2, 1, 3],
+        },
+        index=["69-001-1010", "69-001-1011", "69-074-6012"],
+    )
+    otu_expected = pd.DataFrame(
+        {
+            "OTU1": [10, 20, 0],
+            "OTU3": [2, 1, 3],
+        },
+        index=["69-001-1010", "69-001-1011", "69-074-6012"],
+    )
+    otu_df_new = remove_constant_otus(otu_df_raw)
+
+    pdt.assert_frame_equal(otu_expected, otu_df_new)
+
+
+def test_remove_constant_otus_remove_constant_columns():
+    """This tests removal of a constant OTU.
+
+    GIVEN: an OTU dataframe with a constant column
+    WHEN: I clean the dataframe
+    THEN: the constant column is removed
+    """
+    otu_df_raw = pd.DataFrame(
+        {
+            "OTU1": [10, 20, 0],
+            "OTU2": [4, 4, 4],
+            "OTU3": [2, 1, 3],
+        },
+        index=["69-001-1010", "69-001-1011", "69-074-6012"],
+    )
+    otu_expected = pd.DataFrame(
+        {
+            "OTU1": [10, 20, 0],
+            "OTU3": [2, 1, 3],
+        },
+        index=["69-001-1010", "69-001-1011", "69-074-6012"],
+    )
+    otu_df_new = remove_constant_otus(otu_df_raw)
+
+    pdt.assert_frame_equal(otu_expected, otu_df_new)
+
+
+def test_remove_constant_otus_all_constant_columns():
+    """This tests a dataframe containing only constant OTUs.
+
+    GIVEN: an OTU dataframe with only constant columns
+    WHEN: I clean the dataframe
+    THEN: the result contains no columns
+    """
+    otu_df_raw = pd.DataFrame(
+        {
+            "OTU1": [4, 4, 4],
+            "OTU2": [4, 4, 4],
+            "OTU3": [4, 4, 4],
+        },
+        index=["69-001-1010", "69-001-1011", "69-074-6012"],
+    )
+    otu_expected = otu_df_raw.iloc[:, 0:0]
+    otu_df_new = remove_constant_otus(otu_df_raw)
+
+    pdt.assert_frame_equal(otu_expected, otu_df_new)
+
+
+def test_remove_constant_otus_empty_df():
+    """This tests an empty OTU dataframe.
+
+    GIVEN: an OTU dataframe without columns
+    WHEN: I clean the dataframe
+    THEN: the dataframe remains empty
+    """
+    otu_df_raw = pd.DataFrame(
+        {},
+        index=["69-001-1010", "69-001-1011", "69-074-6012"],
+    )
+    otu_expected = pd.DataFrame(
+        {},
+        index=["69-001-1010", "69-001-1011", "69-074-6012"],
+    )
+    otu_df_new = remove_constant_otus(otu_df_raw)
+
+    pdt.assert_frame_equal(otu_expected, otu_df_new)
