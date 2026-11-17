@@ -1,4 +1,7 @@
-import leidenalg
+import numpy as np
+import igraph as ig
+
+from metagenomes_simulation.communities import find_communities
 
 # --------------------------------------------------------------
 # Network metrics (Using igraph networks)
@@ -166,164 +169,6 @@ def giant_component_fraction(graph):
     return number_of_nodes(largest_component) / n_nodes
 
 
-def community_louvain(graph, weight_enabled=False):
-    """Detect communities by multilevel modularity optimization (Louvain).
-
-    Louvain groups nodes to increase network modularity. Edge weights are
-    ignored by default. If weight_enabled is true, the absolute value of the
-    weight edge attribute is used; so correlations with opposite signs but
-    equal magnitude contribute equally to the partition.
-
-    Args:
-        graph (ig.Graph): Network whose nodes will be partitioned.
-        weight_enabled (bool): Whether to use absolute edge weights.
-            Defaults to False.
-
-    Returns:
-        ig.VertexClustering or None: Detected partition, or None when the
-            graph has no edges.
-    """
-    if number_of_edges(graph) == 0:
-        return None
-
-    if weight_enabled:
-        edge_weights = [abs(w) for w in graph.es["weight"]]
-        return graph.community_multilevel(weights=edge_weights)
-    else:
-        return graph.community_multilevel()
-
-
-def community_leiden(graph, weight_enabled=False):
-    """Detect communities through Leiden modularity optimization.
-
-    Leiden refines a modularity partition to avoid poorly connected groups
-    that can occur with Louvain. Edge weights are ignored by default. If
-    weight_enabled is true, absolute edge weights are used, so the sign of a
-    correlation does not affect community detection.
-
-    Args:
-        graph (ig.Graph): Network whose nodes will be partitioned.
-        weight_enabled (bool): Whether to use absolute edge weights.
-            Defaults to False.
-
-    Returns:
-        ig.VertexClustering or None: Detected partition, or None when the
-            graph has no edges.
-    """
-    if number_of_edges(graph) == 0:
-        return None
-
-    if weight_enabled:
-        edge_weights = [abs(w) for w in graph.es["weight"]]
-        return leidenalg.find_partition(
-            graph,
-            leidenalg.ModularityVertexPartition,
-            weights=edge_weights,
-        )
-
-    else:
-        return leidenalg.find_partition(
-            graph,
-            leidenalg.ModularityVertexPartition,
-        )
-
-
-def community_infomap(graph, weight_enabled=False):
-    """Detect communities by minimizing Infomap's random-walk description.
-
-    Infomap groups nodes between which a random walker tends to remain. Edge
-    weights are ignored by default. If weight_enabled is true, absolute edge
-    weights determine random-walk flow, so correlation signs are ignored.
-
-    Args:
-        graph (ig.Graph): Network whose nodes will be partitioned.
-        weight_enabled (bool): Whether to use absolute edge weights.
-            Defaults to False.
-
-    Returns:
-        ig.VertexClustering or None: Detected partition, or None when the
-            graph has no edges.
-    """
-    if number_of_edges(graph) == 0:
-        return None
-
-    if weight_enabled:
-        edge_weights = [abs(w) for w in graph.es["weight"]]
-        return graph.community_infomap(edge_weights=edge_weights)
-    else:
-        return graph.community_infomap()
-
-
-def community_walktrap(graph, weight_enabled=False):
-    """Detect communities from short random walks using Walktrap.
-
-    Walktrap builds a hierarchy from the idea that short random walks tend
-    to stay inside the same community, then returns its selected partition.
-    Edge weights are ignored by default; when enabled, their absolute values
-    are used and correlation signs therefore do not affect the partition.
-
-    Args:
-        graph (ig.Graph): Network whose nodes will be partitioned.
-        weight_enabled (bool): Whether to use absolute edge weights.
-            Defaults to False.
-
-    Returns:
-        ig.VertexClustering or None: Detected partition, or None when the
-            graph has no edges.
-    """
-    if number_of_edges(graph) == 0:
-        return None
-
-    if weight_enabled:
-        edge_weights = [abs(w) for w in graph.es["weight"]]
-        return graph.community_walktrap(weights=edge_weights).as_clustering()
-    else:
-        return graph.community_walktrap().as_clustering()
-
-
-def find_communities(graph, weight_enabled=False, algorithm="louvain"):
-    """Dispatch community detection to one of the supported algorithms.
-
-    Supported algorithms are Louvain, Leiden, Infomap, and Walktrap. Edge
-    weights are ignored by default. When enabled, each algorithm uses the
-    absolute value of the weight edge attribute, discarding correlation
-    signs. A graph without edges has no detectable partition and returns
-    None.
-
-    Args:
-        graph (ig.Graph): Input graph
-        weight_enabled (bool): Whether to use absolute edge weights.
-            Defaults to False.
-        algorithm (str): One of "louvain", "leiden", "infomap", or
-            "walktrap". Defaults to "louvain".
-
-    Returns:
-        ig.VertexClustering or None: Detected partition, or None when the
-            graph has no edges.
-
-    Raises:
-        `ValueError`: If algorithm is not supported.
-    """
-    if number_of_edges(graph) == 0:
-        return None
-
-    algorithm = algorithm.lower()
-    algorithms = {
-        "louvain": community_louvain,
-        "leiden": community_leiden,
-        "infomap": community_infomap,
-        "walktrap": community_walktrap,
-    }
-
-    if algorithm in algorithms:
-        return algorithms[algorithm](graph, weight_enabled=weight_enabled)
-    else:
-        raise ValueError(
-            f"Unknown community detection algorithm: {algorithm}."
-            f"Please select one of the following: {list(algorithms.keys())}"
-        )
-
-
 def modularity(
     graph, communities=None, weight_enabled=False, algorithm="louvain"
 ):
@@ -362,7 +207,7 @@ def modularity(
 
 
 def compute_network_metrics(
-    graph, communities=None, weight_enabled=False, algorithm=None
+    graph, communities=None, weight_enabled=False, algorithm="louvain"
 ):
     """Compute the main metrics of a single network.
 
@@ -379,9 +224,6 @@ def compute_network_metrics(
     Returns:
         dict: Dictionary of network metrics
     """
-    if algorithm is None:
-        algorithm = "louvain"
-
     if communities is None:
         communities = find_communities(
             graph,
@@ -417,3 +259,158 @@ def compute_network_metrics(
         ),
     }
     return metrics
+
+
+# ---------------------------------------------------------------------------
+# Comparison metrics
+# ---------------------------------------------------------------------------
+
+
+def compare_correlation_matrices(observed_corr, ground_truth_corr):
+    """Compare the upper triangles of two correlation matrices. It measures the
+    Bias, the Mean Absolute Error and the Root Mean Squared Error between
+    the two matrices.
+
+    The diagonal is excluded from the comparison since it constist of all 1.
+
+    Args:
+        observed_corr (pandas.DataFrame): Observed correlation matrix.
+        ground_truth_corr (pandas.DataFrame): Ground-truth correlation
+            matrix.
+
+    Returns:
+        dict: Bias, MAE, RMSE, and Pearson correlation coefficient between
+            the corresponding off-diagonal correlations.
+
+    Raises:
+        `ValueError`: If the input matrices do not have the same dimensions.
+    """
+    if observed_corr.shape != ground_truth_corr.shape:
+        raise ValueError("Input matrices must have the same dimension")
+    if set(observed_corr.index) != set(ground_truth_corr.index):
+        raise ValueError("Input matrices must contain the same taxa")
+
+    # If the OTUs are not aligned, they become aligned before the calculations
+    ground_truth_corr = ground_truth_corr.loc[
+        observed_corr.index, observed_corr.columns
+    ]
+
+    indices = np.triu_indices_from(observed_corr.to_numpy(), k=1)
+
+    observed_corr_np = observed_corr.to_numpy()[indices]
+    ground_truth_corr_np = ground_truth_corr.to_numpy()[indices]
+
+    errors = observed_corr_np - ground_truth_corr_np
+
+    results = {
+        "bias": np.mean(errors),
+        "mae": np.mean(np.abs(errors)),
+        "rmse": np.sqrt(np.mean(errors**2)),
+    }
+    return results
+
+
+def compare_network_edges(observed_corr, ground_truth_corr, threshold=0.3):
+    """Compare the edges of observed and ground-truth correlation networks.
+
+    Args:
+        observed_corr (pd.DataFrame): Estimated taxon correlation matrix.
+        ground_truth_corr (pd.DataFrame): Ground-truth taxon correlation
+            matrix.
+        threshold (float): Absolute threshold applied to the observed_corr
+            matrix. Defaults to 0.3.
+
+    Returns:
+        dict: True positives ("tp"), false positives ("fp"), false negatives
+            ("fn"), precision, recall, F1 score, and edge Jaccard
+            similarity. Precision or recall is "numpy.nan" when its
+            denominator is zero. F1 and Jaccard are one when both networks
+            contain no edges.
+
+    Raises:
+        `ValueError`: If the two matrices have different dimensions.
+    """
+    if observed_corr.shape != ground_truth_corr.shape:
+        raise ValueError("Input matrices must have the same dimension")
+    if set(observed_corr.index) != set(ground_truth_corr.index):
+        raise ValueError("Input matrices must contain the same taxa")
+
+    # If the OTUs are not aligned, they become
+    # aligned before the calculations
+    ground_truth_corr = ground_truth_corr.loc[
+        observed_corr.index, observed_corr.columns
+    ]
+
+    # Take only the upper triangle of the matrix
+    # and only values above the trashold
+    indices = np.triu_indices_from(observed_corr.to_numpy(), k=1)
+    observed_corr_edges = (
+        np.abs(observed_corr.to_numpy()[indices]) >= threshold
+    )
+    true_edges = np.abs(ground_truth_corr.to_numpy()[indices]) >= threshold
+
+    # Count True Positive, False Positive and False Negative,
+    # comparing the simulated correlation matrix
+    # to the ground truth matrix
+    tp = np.count_nonzero(observed_corr_edges & true_edges)
+    fp = np.count_nonzero(observed_corr_edges & ~true_edges)
+    fn = np.count_nonzero(~observed_corr_edges & true_edges)
+
+    # Measure network matrices
+    if tp + fp != 0:
+        precision = tp / (tp + fp)
+    else:
+        precision = np.nan
+
+    if tp + fn != 0:
+        recall = tp / (tp + fn)
+    else:
+        recall = np.nan
+
+    f1_denominator = 2 * tp + fp + fn
+
+    if f1_denominator != 0:
+        f1 = 2 * tp / f1_denominator
+    else:
+        f1 = 1.0
+
+    union = tp + fp + fn
+    if union != 0:
+        jaccard = tp / union
+    else:
+        jaccard = 1.0
+
+    results = {
+        "precision": precision,
+        "recall": recall,
+        "f1": f1,
+        "jaccard": jaccard,
+    }
+    return results
+
+
+def compare_communities(
+    observed_community_memberships, ground_truth_community_memberships
+):
+
+    vi = ig.compare_communities(
+        ground_truth_community_memberships,
+        observed_community_memberships,
+        method="vi",
+        remove_none=True,
+    )
+    ari = ig.compare_communities(
+        ground_truth_community_memberships,
+        observed_community_memberships,
+        method="adjusted_rand",
+        remove_none=True,
+    )
+    nmi = ig.compare_communities(
+        ground_truth_community_memberships,
+        observed_community_memberships,
+        method="nmi",
+        remove_none=True,
+    )
+
+    results = {"vi": vi, "ari": ari, "nmi": nmi}
+    return results
