@@ -4,7 +4,7 @@ import igraph as ig
 from itertools import combinations
 
 from metagenomes_simulation.correlation import measure_correlation_coefficient
-from metagenomes_simulation.data_processing import clean_otus_df
+from metagenomes_simulation.normalization import remove_constant_otus
 
 # Parallel calculation
 from pathos.multiprocessing import ProcessingPool as Pool
@@ -35,7 +35,7 @@ def create_correlation_matrix(otu_df, correlation_method="Pearson"):
     """
 
     # Remove constant OTUs
-    otu_df_processed = clean_otus_df(otu_df)
+    otu_df_processed = remove_constant_otus(otu_df)
     # Take the name of each OTU
     otu_names = otu_df_processed.columns
     # Convert from pandas dataframe to numpy matrix
@@ -138,7 +138,7 @@ def create_correlation_matrix_parallel(
         raise ValueError("num_processes must be at least 1.")
 
     # Remove constant OTUs
-    otu_df_processed = clean_otus_df(otu_df)
+    otu_df_processed = remove_constant_otus(otu_df)
     # Take the name of each OTU
     otu_names = otu_df_processed.columns
 
