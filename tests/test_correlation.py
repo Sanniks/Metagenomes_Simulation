@@ -10,6 +10,7 @@ from metagenomes_simulation.correlation import (
     create_correlation_matrix,
     create_correlation_matrix_parallel,
     _compute_correlation_parallel,
+    measure_correlation_all_methods,
 )
 
 # --------------------------------------------------------------------------------------------
@@ -664,3 +665,146 @@ def test_create_correlation_matrix_parallel_with_one_otu():
         columns=["OTU1"],
     )
     pdt.assert_frame_equal(corr_matrix, expected_matrix)
+
+
+# --------------------------------------------------------------------------------------------
+# TEST measure_correlation_all_methods
+# --------------------------------------------------------------------------------------------
+
+
+def test_measure_correlation_all_methods_returns_all_methods():
+    """This tests that all correlation methods are returned.
+
+    GIVEN: an OTU dataframe containing three variable taxa
+    WHEN: I compute all correlation matrices
+    THEN: the result contains Pearson, Spearman, and Kendall
+    """
+
+    otu_df = pd.DataFrame(
+        {
+            "OTU1": [1, 2, 3],
+            "OTU2": [2, 4, 6],
+            "OTU3": [3, 2, 1],
+        }
+    )
+
+    results = measure_correlation_all_methods(otu_df, num_processes=2)
+
+    assert set(results.keys()) == {"Pearson", "Spearman", "Kendall"}
+
+
+def test_measure_correlation_all_methods_same_results_as_classic():
+    """This tests that all correlation matrices match the sequential ones.
+
+    GIVEN: an OTU dataframe containing three variable taxa
+    WHEN: I compute the correlation matrices using both functions
+    THEN: the matrices are equal for each correlation method
+    """
+
+    otu_df = pd.DataFrame(
+        {
+            "OTU1": [10, 20, 0],
+            "OTU2": [0, 5, 3],
+            "OTU3": [2, 1, 4],
+        }
+    )
+
+    results = measure_correlation_all_methods(otu_df, num_processes=2)
+
+    for method in ("Pearson", "Spearman", "Kendall"):
+        expected_matrix = create_correlation_matrix(
+            otu_df, correlation_method=method
+        )
+
+        pdt.assert_frame_equal(results[method], expected_matrix)
+
+
+def test_measure_correlation_all_methods_remove_constant_columns():
+    """This tests that constant OTUs are removed.
+
+    GIVEN: an OTU dataframe containing two variable and one constant OTU
+    WHEN: I compute all correlation matrices
+    THEN: every matrix contains only the variable OTUs
+    """
+
+    otu_df = pd.DataFrame(
+        {
+            "OTU1": [1, 2, 3],
+            "OTU2": [2, 4, 6],
+            "OTU3": [1, 1, 1],
+        }
+    )
+
+    results = measure_correlation_all_methods(otu_df, num_processes=2)
+
+    for matrix in results.values():
+        assert matrix.shape == (2, 2)
+        assert "OTU3" not in matrix.columns
+        assert "OTU3" not in matrix.index
+
+
+def test_measure_correlation_all_methods_error_number_of_processes():
+    """This tests that an invalid number of processes raises an error.
+
+    GIVEN: an OTU dataframe and a process count equal to zero
+    WHEN: I compute all correlation matrices
+    THEN: the function raises an error
+    """
+
+    otu_df = pd.DataFrame(
+        {
+            "OTU1": [1, 2, 3],
+            "OTU2": [2, 4, 6],
+        }
+    )
+
+    with pytest.raises(ValueError):
+        measure_correlation_all_methods(otu_df, num_processes=0)
+
+
+def test_measure_correlation_all_methods_with_no_otus():
+    """This tests the function with no variable OTUs.
+
+    GIVEN: an OTU dataframe containing only constant OTUs
+    WHEN: I compute all correlation matrices
+    THEN: all correlation matrices are empty
+    """
+
+    otu_df = pd.DataFrame(
+        {
+            "OTU1": [1, 1, 1],
+            "OTU2": [0, 0, 0],
+        }
+    )
+
+    results = measure_correlation_all_methods(otu_df)
+
+    assert set(results.keys()) == {"Pearson", "Spearman", "Kendall"}
+
+    for matrix in results.values():
+        assert matrix.empty
+        assert matrix.shape == (0, 0)
+
+
+def test_measure_correlation_all_methods_with_one_otu():
+    """This tests the function with one variable OTU.
+
+    GIVEN: an OTU dataframe containing one variable OTU
+    WHEN: I compute all correlation matrices
+    THEN: every matrix is a one-by-one matrix containing one
+    """
+
+    otu_df = pd.DataFrame({"OTU1": [1, 2, 3]})
+
+    results = measure_correlation_all_methods(otu_df)
+
+    expected_matrix = pd.DataFrame(
+        [[1.0]],
+        index=["OTU1"],
+        columns=["OTU1"],
+    )
+
+    assert set(results.keys()) == {"Pearson", "Spearman", "Kendall"}
+
+    for matrix in results.values():
+        pdt.assert_frame_equal(matrix, expected_matrix)

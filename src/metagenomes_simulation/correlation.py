@@ -234,7 +234,17 @@ def create_correlation_matrix_parallel(
 
 
 def measure_correlation_all_methods(otu_df, num_processes=4):
+    """Compute Pearson, Spearman, and Kendall correlation matrices in parallel.
 
+    Constant OTUs are removed before computing correlations.
+
+    Args:
+        otu_df (pd.DataFrame): OTU abundance matrix (samples x OTUs).
+        num_processes (int): Number of parallel processes.
+
+    Returns:
+        dict[str, pd.DataFrame]: Correlation m atrix for each method.
+    """
     correlation_methods = ("Pearson", "Spearman", "Kendall")
     if num_processes < 1:
         raise ValueError("num_processes must be at least 1.")
@@ -255,7 +265,15 @@ def measure_correlation_all_methods(otu_df, num_processes=4):
             index=otu_names,
             columns=otu_names,
         )
-        return empty_dataframe
+
+        correlation_matrix_dict = {}
+
+        for correlation_method in correlation_methods:
+            correlation_matrix_dict[correlation_method] = (
+                empty_dataframe.copy()
+            )
+
+        return correlation_matrix_dict
 
     # Array containing all combination of OTUs for the
     # calculation of every correlation coefficients
