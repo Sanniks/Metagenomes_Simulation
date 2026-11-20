@@ -2,44 +2,6 @@ import pandas as pd
 import numpy as np
 
 
-def remove_constant_otus(otu_df):
-    """Remove OTUs with constant values.
-
-    Args:
-        otu_df (pd.DataFrame): OTU abundance table.
-
-    Returns:
-        pd.DataFrame: OTU table without constant columns.
-    """
-
-    # Count how many different values each OTU column has
-    return otu_df.loc[:, (otu_df != otu_df.iloc[0]).any()]
-
-
-def absolute_to_relative_abundance(otu_df):
-    """Transform a dataframe with absolute abundances into relative abundances.
-
-    If a sample has total abundance equal to zero, its total abundance is
-    replaced with 1 before division. In this way, zero-sum samples are kept
-    as rows of zeros.
-
-    Args:
-        otu_df (pd.DataFrame): Dataframe with absolute abundances.
-
-    Returns:
-        pd.DataFrame: Dataframe with relative abundances.
-    """
-    # Sum all the row abundances
-    sample_total_abundance = otu_df.sum(axis=1)
-
-    # Replace zeros with 1 to avoid division by zero
-    sample_total_abundance = sample_total_abundance.replace(0, 1)
-
-    # Divide sample abundances by the sum of the sample abundances
-    otu_rel = otu_df.div(sample_total_abundance, axis=0)
-    return otu_rel
-
-
 def substitute_zero(otu_df, delta=None):
     """Replace zero abundances using multiplicative replacement.
 
@@ -94,6 +56,44 @@ def substitute_zero(otu_df, delta=None):
     return otu_replaced_df
 
 
+def remove_constant_otus(otu_df):
+    """Remove OTUs with constant values.
+
+    Args:
+        otu_df (pd.DataFrame): OTU abundance table.
+
+    Returns:
+        pd.DataFrame: OTU table without constant columns.
+    """
+
+    # Count how many different values each OTU column has
+    return otu_df.loc[:, (otu_df != otu_df.iloc[0]).any()]
+
+
+def absolute_to_relative_abundance(otu_df):
+    """Transform a dataframe with absolute abundances into relative abundances.
+
+    If a sample has total abundance equal to zero, its total abundance is
+    replaced with 1 before division. In this way, zero-sum samples are kept
+    as rows of zeros.
+
+    Args:
+        otu_df (pd.DataFrame): Dataframe with absolute abundances.
+
+    Returns:
+        pd.DataFrame: Dataframe with relative abundances.
+    """
+    # Sum all the row abundances
+    sample_total_abundance = otu_df.sum(axis=1)
+
+    # Replace zeros with 1 to avoid division by zero
+    sample_total_abundance = sample_total_abundance.replace(0, 1)
+
+    # Divide sample abundances by the sum of the sample abundances
+    otu_rel = otu_df.div(sample_total_abundance, axis=0)
+    return otu_rel
+
+
 def absolute_to_clr_abundance(otu_df, delta=None):
     """Transform a dataframe with absolute abundances into centered log-ratio
     abundances.
@@ -114,8 +114,22 @@ def absolute_to_clr_abundance(otu_df, delta=None):
         pd.DataFrame: Dataframe with centered log-ratio abundances.
     """
     otu_no_zeros = substitute_zero(otu_df, delta=delta)
-
     log_otu = np.log(otu_no_zeros)
     otu_clr = log_otu.sub(log_otu.mean(axis=1), axis=0)
 
     return otu_clr
+
+
+def normalize_abundance_all_methods(otu_df):
+    """Normalize absolute OTU abundances using relative abundance and CLR.
+
+    Args:
+        otu_df (pd.DataFrame): Absolute OTU abundance matrix.
+
+    Returns:
+        dict[str, pd.DataFrame]: Relative and CLR-transformed abundances.
+    """
+    return {
+        "relative": absolute_to_relative_abundance(otu_df),
+        "clr": absolute_to_clr_abundance(otu_df),
+    }

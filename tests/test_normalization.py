@@ -10,6 +10,7 @@ from metagenomes_simulation.normalization import (
     absolute_to_clr_abundance,
     remove_constant_otus,
     substitute_zero,
+    normalize_abundance_all_methods,
 )
 
 # --------------------------------------------------------------------------------------------
@@ -463,3 +464,73 @@ def test_remove_constant_otus_empty_df():
     otu_df_new = remove_constant_otus(otu_df_raw)
 
     pdt.assert_frame_equal(otu_expected, otu_df_new)
+
+
+# --------------------------------------------------------------------------------------------
+# TEST normalize_abundance_all_methods
+# --------------------------------------------------------------------------------------------
+
+
+def test_normalize_abundance_all_methods_returns_all_methods():
+    """This tests that both normalization methods are returned.
+
+    GIVEN: an OTU abundance dataframe
+    WHEN: I apply all normalization methods
+    THEN: the result contains relative and CLR abundances
+    """
+
+    otu_df = pd.DataFrame(
+        {
+            "OTU1": [10, 20, 30],
+            "OTU2": [20, 30, 40],
+            "OTU3": [30, 40, 50],
+        }
+    )
+
+    results = normalize_abundance_all_methods(otu_df)
+
+    assert set(results.keys()) == {"relative", "clr"}
+
+
+def test_normalize_abundance_all_methods_correct_relative():
+    """This tests that relative abundances are correctly returned.
+
+    GIVEN: an OTU abundance dataframe
+    WHEN: I apply all normalization methods
+    THEN: relative abundances match the individual normalization
+    """
+
+    otu_df = pd.DataFrame(
+        {
+            "OTU1": [10, 20, 30],
+            "OTU2": [20, 30, 40],
+            "OTU3": [30, 40, 50],
+        }
+    )
+
+    results = normalize_abundance_all_methods(otu_df)
+    expected = absolute_to_relative_abundance(otu_df)
+
+    pdt.assert_frame_equal(results["relative"], expected)
+
+
+def test_normalize_abundance_all_methods_correct_clr():
+    """This tests that CLR abundances are correctly returned.
+
+    GIVEN: an OTU abundance dataframe
+    WHEN: I apply all normalization methods
+    THEN: CLR abundances match the individual normalization
+    """
+
+    otu_df = pd.DataFrame(
+        {
+            "OTU1": [10, 20, 30],
+            "OTU2": [20, 30, 40],
+            "OTU3": [30, 40, 50],
+        }
+    )
+
+    results = normalize_abundance_all_methods(otu_df)
+    expected = absolute_to_clr_abundance(otu_df)
+
+    pdt.assert_frame_equal(results["clr"], expected)
