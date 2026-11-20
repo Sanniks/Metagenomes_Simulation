@@ -1,354 +1,22 @@
 from metagenomes_simulation.network import (
-    create_correlation_matrix,
-    create_correlation_matrix_parallel,
     create_network_from_correlation_matrix,
-    _compute_correlation_parallel,
+    compare_network_edges,
+    average_clustering,
+    average_degree,
+    compute_network_metrics,
+    giant_component_fraction,
+    largest_connected_component,
+    modularity,
+    network_density,
+    number_of_connected_components,
+    number_of_edges,
+    number_of_nodes,
 )
-
+import igraph as ig
 import pandas as pd
-import pandas.testing as pdt
 import numpy as np
 
-from hypothesis import given
-from hypothesis import strategies as st
-
 import pytest
-
-# --------------------------------------------------------------------------------------------
-# TEST create_correlation_matrix
-# --------------------------------------------------------------------------------------------
-
-
-@given(
-    st.floats(min_value=0, allow_nan=False, allow_infinity=False),
-    st.floats(min_value=0, allow_nan=False, allow_infinity=False),
-    st.floats(min_value=0, allow_nan=False, allow_infinity=False),
-)
-def test_create_correlation_matrix_symmetrical_matrix(x, y, z):
-    """This tests that the correlation matrix is symmetric.
-
-    GIVEN: an OTU dataframe containing 3 taxa and 3 samples
-    WHEN: I create its correlation matrix
-    THEN: the matrix is equal to its transpose
-    """
-    otu_df = pd.DataFrame(
-        {
-            "OTU1": [10, x, 0],
-            "OTU2": [0, y, 3],
-            "OTU3": [2, z, 4],
-        },
-        index=["69-001-1010", "69-001-1011", "69-074-6012"],
-    )
-
-    corr_matrix = create_correlation_matrix(otu_df)
-    pdt.assert_frame_equal(corr_matrix, corr_matrix.T)
-
-
-@given(
-    st.floats(min_value=0, allow_nan=False, allow_infinity=False),
-    st.floats(min_value=0, allow_nan=False, allow_infinity=False),
-    st.floats(min_value=0, allow_nan=False, allow_infinity=False),
-)
-def test_create_correlation_matrix_diagonal_is_one(x, y, z):
-    """This tests that the correlation matrix has a unit diagonal.
-
-    GIVEN: an OTU dataframe containing 3 taxa and 3 samples
-    WHEN: I create its correlation matrix
-    THEN: every value on the main diagonal is equal to one
-    """
-    otu_df = pd.DataFrame(
-        {
-            "OTU1": [10, x, 0],
-            "OTU2": [0, y, 3],
-            "OTU3": [2, z, 4],
-        },
-        index=["69-001-1010", "69-001-1011", "69-074-6012"],
-    )
-
-    corr_matrix = create_correlation_matrix(otu_df)
-    diagonal_values = np.diag(corr_matrix)
-    assert np.allclose(diagonal_values, 1)
-
-
-def test_create_correlation_matrix_correct_values_for_known_pairs():
-    """This tests that known taxon relationships produce the expected
-    correlations.
-
-    GIVEN: two perfectly positively correlated taxa
-    and one perfectly negatively correlated taxon
-    WHEN: I create their Pearson correlation matrix
-    THEN: the corresponding matrix values are one and minus one
-    """
-    otu_df = pd.DataFrame(
-        {
-            "OTU1": [1, 2, 3, 4],
-            "OTU2": [2, 4, 6, 8],
-            "OTU3": [4, 3, 2, 1],
-        },
-        index=["69-001-1010", "69-001-1011", "69-074-6012", "69-074-6013"],
-    )
-
-    corr_matrix = create_correlation_matrix(
-        otu_df, correlation_method="Pearson"
-    )
-
-    expected_matrix = pd.DataFrame(
-        {
-            "OTU1": [1.0, 1.0, -1.0],
-            "OTU2": [1.0, 1.0, -1.0],
-            "OTU3": [-1.0, -1.0, 1.0],
-        },
-        index=["OTU1", "OTU2", "OTU3"],
-    )
-
-    pdt.assert_frame_equal(
-        corr_matrix, expected_matrix, check_exact=False, atol=1e-12
-    )
-
-
-def test_create_correlation_matrix_remove_constant_columns():
-    """This tests that constant taxa are removed from the correlation matrix.
-
-    GIVEN: an OTU dataframe containing three variable and two constant taxa
-    WHEN: I create its Pearson correlation matrix
-    THEN: the result contains only the three variable
-    taxa and their expected correlations
-    """
-    otu_df = pd.DataFrame(
-        {
-            "OTU1": [1, 2, 3, 4],
-            "OTU2": [2, 4, 6, 8],
-            "OTU3": [4, 3, 2, 1],
-            "OTU4": [1, 1, 1, 1],
-            "OTU5": [0, 0, 0, 0],
-        },
-        index=["69-001-1010", "69-001-1011", "69-074-6012", "69-074-6013"],
-    )
-
-    corr_matrix = create_correlation_matrix(
-        otu_df, correlation_method="Pearson"
-    )
-
-    expected_matrix = pd.DataFrame(
-        {
-            "OTU1": [1.0, 1.0, -1.0],
-            "OTU2": [1.0, 1.0, -1.0],
-            "OTU3": [-1.0, -1.0, 1.0],
-        },
-        index=["OTU1", "OTU2", "OTU3"],
-    )
-
-    pdt.assert_frame_equal(
-        corr_matrix, expected_matrix, check_exact=False, atol=1e-12
-    )
-
-
-def test_create_correlation_matrix_all_constant_columns():
-    """This tests correlation matrix creation when every taxon is constant.
-
-    GIVEN: an OTU dataframe containing only constant taxa
-    WHEN: I create its Pearson correlation matrix
-    THEN: the result is an empty matrix
-    """
-    otu_df = pd.DataFrame(
-        {
-            "OTU4": [1, 1, 1, 1],
-            "OTU5": [0, 0, 0, 0],
-        },
-        index=["69-001-1010", "69-001-1011", "69-074-6012", "69-074-6013"],
-    )
-
-    corr_matrix = create_correlation_matrix(
-        otu_df, correlation_method="Pearson"
-    )
-
-    assert corr_matrix.shape == (0, 0)
-    assert corr_matrix.empty
-
-
-def test_create_correlation_matrix_parallel_with_no_otus():
-    """This tests the parallel function with no variable OTUs.
-
-    GIVEN: a dataframe containing only constant OTUs
-    WHEN: I create its correlation matrix in parallel
-    THEN: the result is an empty dataframe
-    """
-    otu_df = pd.DataFrame(
-        {
-            "OTU1": [1, 1, 1],
-            "OTU2": [0, 0, 0],
-        }
-    )
-
-    corr_matrix = create_correlation_matrix_parallel(otu_df)
-
-    assert corr_matrix.empty
-    assert corr_matrix.shape == (0, 0)
-
-
-# --------------------------------------------------------------------------------------------
-# TEST _compute_correlation_parallel
-# --------------------------------------------------------------------------------------------
-
-
-def test_compute_correlation_parallel_expected():
-    """This tests that a parallel correlation block returns the expected
-    values.
-
-    GIVEN: OTU data and a block containing
-    two pairs of taxa with known relationships
-    WHEN: I compute the block correlations with the parallel worker
-    THEN: each result contains the expected taxon
-    indices and Pearson correlation
-    """
-    otu_df = pd.DataFrame(
-        {
-            "OTU1": [1, 2, 3, 4],
-            "OTU2": [2, 4, 6, 8],
-            "OTU3": [4, 3, 2, 1],
-            "OTU4": [1, 1, 1, 1],
-            "OTU5": [0, 0, 0, 0],
-        },
-        index=["69-001-1010", "69-001-1011", "69-074-6012", "69-074-6013"],
-    )
-
-    otu_data = otu_df.to_numpy()
-    block = [(0, 1), (0, 2)]
-    args = (otu_data, block, "Pearson")
-
-    results = _compute_correlation_parallel(args)
-
-    assert results[0][0] == 0
-    assert results[0][1] == 1
-    assert results[0][2] == pytest.approx(1.0)
-
-    assert results[1][0] == 0
-    assert results[1][1] == 2
-    assert results[1][2] == pytest.approx(-1.0)
-
-
-# --------------------------------------------------------------------------------------------
-# TEST create_correlation_matrix_parallel
-# --------------------------------------------------------------------------------------------
-
-
-def test_create_correlation_matrix_parallel_same_result_as_classic():
-    """This tests that parallel and sequential correlation matrices are
-    equivalent.
-
-    GIVEN: the same OTU dataframe and Pearson correlation method
-    WHEN: I create the correlation matrix sequentially and in parallel
-    THEN: both matrices are equal
-    """
-    otu_df = pd.DataFrame(
-        {
-            "OTU1": [10, 20, 0],
-            "OTU2": [0, 5, 3],
-            "OTU3": [2, 1, 4],
-        },
-        index=["69-001-1010", "69-001-1011", "69-074-6012"],
-    )
-
-    corr_matrix = create_correlation_matrix(
-        otu_df, correlation_method="Pearson"
-    )
-    corr_matrix_parallel = create_correlation_matrix_parallel(
-        otu_df,
-        correlation_method="Pearson",
-        num_processes=2,
-    )
-
-    pdt.assert_frame_equal(
-        corr_matrix,
-        corr_matrix_parallel,
-    )
-
-
-def test_create_correlation_matrix_parallel_with_different_num_processes():
-    """This tests that the parallel result does not depend on the number of
-    processes.
-
-    GIVEN: an OTU dataframe and three valid process counts
-    WHEN: I create a parallel Pearson correlation matrix
-    with each process count
-    THEN: all the resulting matrices are equal
-    """
-    otu_df = pd.DataFrame(
-        {
-            "OTU1": [10, 20, 0],
-            "OTU2": [0, 5, 3],
-            "OTU3": [2, 1, 4],
-        },
-        index=["69-001-1010", "69-001-1011", "69-074-6012"],
-    )
-
-    corr_matrix_1 = create_correlation_matrix_parallel(
-        otu_df,
-        correlation_method="Pearson",
-        num_processes=1,
-    )
-
-    corr_matrix_2 = create_correlation_matrix_parallel(
-        otu_df,
-        correlation_method="Pearson",
-        num_processes=2,
-    )
-
-    corr_matrix_4 = create_correlation_matrix_parallel(
-        otu_df,
-        correlation_method="Pearson",
-        num_processes=4,
-    )
-
-    pdt.assert_frame_equal(corr_matrix_1, corr_matrix_2)
-    pdt.assert_frame_equal(corr_matrix_1, corr_matrix_4)
-
-
-def test_create_correlation_matrix_parallel_error_number_of_processes():
-    """This tests that a non-positive number of processes raises an error.
-
-    GIVEN: an OTU dataframe and a process count equal to zero
-    WHEN: I create its parallel Pearson correlation matrix
-    THEN: the function raises an error
-    """
-    otu_df = pd.DataFrame(
-        {
-            "OTU1": [10, 20, 0],
-            "OTU2": [0, 5, 3],
-            "OTU3": [2, 1, 4],
-        },
-        index=["69-001-1010", "69-001-1011", "69-074-6012"],
-    )
-    with pytest.raises(ValueError):
-        create_correlation_matrix_parallel(
-            otu_df,
-            correlation_method="Pearson",
-            num_processes=0,
-        )
-
-
-def test_create_correlation_matrix_parallel_with_one_otu():
-    """This tests the parallel function with one variable OTU.
-
-    GIVEN: a dataframe containing one variable OTU
-    WHEN: I create its correlation matrix in parallel
-    THEN: the result is a one-by-one matrix containing one
-    """
-    otu_df = pd.DataFrame(
-        {
-            "OTU1": [1, 2, 3],
-        }
-    )
-
-    corr_matrix = create_correlation_matrix_parallel(otu_df)
-
-    expected_matrix = pd.DataFrame(
-        [[1.0]],
-        index=["OTU1"],
-        columns=["OTU1"],
-    )
-    pdt.assert_frame_equal(corr_matrix, expected_matrix)
-
 
 # --------------------------------------------------------------------------------------------
 # TEST create_network_from_correlation_matrix
@@ -576,3 +244,406 @@ def test_create_network_removes_all_isolated_nodes():
 
     assert G.vcount() == 0
     assert G.ecount() == 0
+
+
+# --------------------------------------------------------------------------------------------
+# TEST number_of_nodes
+# --------------------------------------------------------------------------------------------
+
+
+def test_number_of_nodes_empty_graph():
+    """Test the node count for an empty graph.
+
+    GIVEN: An empty graph.
+    WHEN: Its nodes are counted.
+    THEN: The result is zero.
+    """
+    G = ig.Graph(n=0)
+    assert number_of_nodes(G) == 0
+
+
+def test_number_of_nodes_multiple_nodes():
+    """Test the node count for a non-empty graph.
+
+    GIVEN: A graph with three nodes.
+    WHEN: Its nodes are counted.
+    THEN: The result is three.
+    """
+    G = ig.Graph(n=3)
+    assert number_of_nodes(G) == 3
+
+
+# --------------------------------------------------------------------------------------------
+# TEST number_of_edges
+# --------------------------------------------------------------------------------------------
+
+
+def test_number_of_edges_empty_graph():
+    """Test the edge count for an empty graph.
+
+    GIVEN: An empty graph.
+    WHEN: Its edges are counted.
+    THEN: The result is zero.
+    """
+    G = ig.Graph(n=0)
+    assert number_of_edges(G) == 0
+
+
+def test_number_of_edges_multiple_edges():
+    """Test the edge count for a graph with edges.
+
+    GIVEN: A graph with four edges.
+    WHEN: Its edges are counted.
+    THEN: The result is four.
+    """
+    G = ig.Graph(n=4)
+    G.add_edges([(0, 1), (1, 2), (2, 3), (3, 0)])
+    assert number_of_edges(G) == 4
+
+
+# --------------------------------------------------------------------------------------------
+# TEST average_degree
+# --------------------------------------------------------------------------------------------
+
+
+def test_average_degree_empty_graph():
+    """Test the average degree of an empty graph.
+
+    GIVEN: An empty graph.
+    WHEN: Its average degree is computed.
+    THEN: The result is zero.
+    """
+    G = ig.Graph(n=0)
+    assert average_degree(G) == 0.0
+
+
+def test_average_degree_path_graph():
+    """Test the average degree of a path graph.
+
+    GIVEN: A three-node path graph.
+    WHEN: Its average degree is computed.
+    THEN: The result is four thirds.
+    """
+    G = ig.Graph(n=3)
+    G.add_edges([(0, 1), (1, 2)])
+    assert average_degree(G) == 4 / 3
+
+
+def test_average_degree_directed_graph_error():
+    """Test that average degree rejects directed graphs.
+
+    GIVEN: A directed graph.
+    WHEN: Its average degree is requested.
+    THEN: A value error is raised.
+    """
+    G = ig.Graph(n=2, edges=[(0, 1)], directed=True)
+
+    with pytest.raises(ValueError):
+        average_degree(G)
+
+
+# --------------------------------------------------------------------------------------------
+# TEST network_density
+# --------------------------------------------------------------------------------------------
+
+
+def test_network_density_empty_graph():
+    """Test the density of an empty graph.
+
+    GIVEN: An empty graph.
+    WHEN: Its density is computed.
+    THEN: The result is zero.
+    """
+    G = ig.Graph(n=0)
+    assert network_density(G) == 0.0
+
+
+def test_network_density_complete_graph():
+    """Test the density of a complete graph.
+
+    GIVEN: A complete three-node graph.
+    WHEN: Its density is computed.
+    THEN: The result is one.
+    """
+    G = ig.Graph(n=3)
+    G.add_edges([(0, 1), (0, 2), (1, 2)])
+    assert network_density(G) == 1.0
+
+
+def test_network_density_partial_graph():
+    """Test the density of a partial graph.
+
+    GIVEN: A nine-node graph with three edges.
+    WHEN: Its density is computed.
+    THEN: The result is 3/36, where 36 is the max
+    combination for nine nodes.
+    """
+    G = ig.Graph(n=9)
+    G.add_edges([(0, 1), (0, 2), (1, 2)])
+
+    assert network_density(G) == pytest.approx(3 / 36)
+
+
+# --------------------------------------------------------------------------------------------
+# TEST average_clustering
+# --------------------------------------------------------------------------------------------
+
+
+def test_average_clustering_empty_graph():
+    """Test clustering for an empty graph.
+
+    GIVEN: An empty graph.
+    WHEN: Its average clustering is computed.
+    THEN: The result is zero.
+    """
+    G = ig.Graph(n=0)
+    assert average_clustering(G) == 0.0
+
+
+def test_average_clustering_path_graph():
+    """Test clustering for a path graph.
+
+    GIVEN: A three-node path graph.
+    WHEN: Its average clustering is computed.
+    THEN: The result is zero.
+    """
+    G = ig.Graph(n=3)
+    G.add_edges([(0, 1), (1, 2)])
+    assert average_clustering(G) == 0.0
+
+
+def test_average_clustering_triangle_graph():
+    """Test clustering for a triangle graph.
+
+    GIVEN: A three-node triangle.
+    WHEN: Its average clustering is computed.
+    THEN: The result is one.
+    """
+    G = ig.Graph(n=3)
+    G.add_edges([(0, 1), (1, 2), (2, 0)])
+    assert average_clustering(G) == 1.0
+
+
+def test_average_clustering_weighted_triangle():
+    """Test weighted clustering on a triangle.
+
+    GIVEN: A triangle with positive and negative edge weights.
+    WHEN: Its weighted average clustering is computed.
+    THEN: Absolute weights are used and the result is one.
+    """
+    G = ig.Graph(n=3, edges=[(0, 1), (1, 2), (2, 0)])
+    G.es["weight"] = [1.0, -1.0, 1.0]
+
+    assert average_clustering(G, weight_enabled=True) == pytest.approx(1.0)
+
+
+def test_average_clustering_weighted_without_weights_error():
+    """Test weighted clustering without a weight attribute.
+
+    GIVEN: A non-empty graph without edge weights.
+    WHEN: Weighted average clustering is requested.
+    THEN: A value error is raised.
+    """
+    G = ig.Graph(n=2, edges=[(0, 1)])
+
+    with pytest.raises(ValueError):
+        average_clustering(G, weight_enabled=True)
+
+
+# --------------------------------------------------------------------------------------------
+# TEST number_of_connected_components
+# --------------------------------------------------------------------------------------------
+
+
+def test_number_of_connected_components_empty_graph():
+    """Test component counting for an empty graph.
+
+    GIVEN: An empty graph.
+    WHEN: Its connected components are counted.
+    THEN: The result is zero.
+    """
+    G = ig.Graph(n=0)
+    assert number_of_connected_components(G) == 0
+
+
+def test_number_of_connected_components_disconnected_graph():
+    """Test component counting for a disconnected graph.
+
+    GIVEN: A graph with two disconnected pairs.
+    WHEN: Its connected components are counted.
+    THEN: The result is two.
+    """
+    G = ig.Graph(n=4)
+    G.add_edges([(0, 1), (2, 3)])
+    assert number_of_connected_components(G) == 2
+
+
+# --------------------------------------------------------------------------------------------
+# TEST largest_connected_component
+# --------------------------------------------------------------------------------------------
+
+
+def test_largest_connected_component_empty_graph():
+    """Test the largest component of an empty graph.
+
+    GIVEN: An empty graph.
+    WHEN: Its largest component is requested.
+    THEN: No component is returned.
+    """
+    G = ig.Graph(n=0)
+    assert largest_connected_component(G) is None
+
+
+def test_largest_connected_component_disconnected_graph():
+    """Test the largest component of a disconnected graph.
+
+    GIVEN: A graph with components of different sizes.
+    WHEN: Its largest component is requested.
+    THEN: The three-node component is returned.
+    """
+    G = ig.Graph(n=5)
+    G.add_edges([(0, 1), (2, 3), (4, 0)])
+    largest_component = largest_connected_component(G)
+
+    assert number_of_nodes(largest_component) == 3
+    assert number_of_edges(largest_component) == 2
+
+
+# --------------------------------------------------------------------------------------------
+# TEST giant_component_fraction
+# --------------------------------------------------------------------------------------------
+
+
+def test_giant_component_fraction_empty_graph():
+    """Test the giant-component fraction of an empty graph.
+
+    GIVEN: An empty graph.
+    WHEN: Its giant-component fraction is computed.
+    THEN: The result is zero.
+    """
+    G = ig.Graph(n=0)
+    assert giant_component_fraction(G) == 0.0
+
+
+def test_giant_component_fraction_disconnected_graph():
+    """Test the giant-component fraction of a disconnected graph.
+
+    GIVEN: A graph whose largest component has three of five nodes.
+    WHEN: Its giant-component fraction is computed.
+    THEN: The result is three fifths.
+    """
+    G = ig.Graph(n=5)
+    G.add_edges([(0, 1), (2, 3), (4, 0)])
+    assert giant_component_fraction(G) == 3.0 / 5.0
+
+
+# --------------------------------------------------------------------------------------------
+# TEST modularity
+# --------------------------------------------------------------------------------------------
+
+
+def test_modularity_empty_graph():
+    """Test modularity for an empty graph.
+
+    GIVEN: An empty graph and no communities.
+    WHEN: Its modularity is computed.
+    THEN: The result is zero.
+    """
+    G = ig.Graph(n=0)
+    communities = []
+    assert modularity(G, communities) == 0.0
+
+
+def test_modularity_without_communities():
+    """Test modularity without predefined communities.
+
+    GIVEN: A graph without a supplied partition.
+    WHEN: Its modularity is computed.
+    THEN: A valid modularity value is returned.
+    """
+    G = ig.Graph(n=6)
+    G.add_edges([(0, 1), (1, 2), (2, 0), (3, 4), (4, 5), (5, 3)])
+    G.vs["name"] = ["1", "2", "3", "4", "5", "6"]
+    mod = modularity(G)
+    assert isinstance(mod, float)
+    assert -1.0 <= mod <= 1.0
+
+
+def test_modularity_can_use_or_ignore_weights():
+    """Test weighted and unweighted modularity.
+
+    GIVEN: A weighted graph and a fixed partition.
+    WHEN: Modularity is computed with and without weights.
+    THEN: The values differ and unweighted is the default.
+    """
+    G = ig.Graph(n=6)
+    G.add_edges([(0, 1), (1, 2), (2, 0), (3, 4), (4, 5), (5, 3)])
+    G.vs["name"] = ["1", "2", "3", "4", "5", "6"]
+    G.es["weight"] = [1, 0.1, 0.1, 0.1, 1, 1]
+    communities = ig.VertexClustering(G, membership=[0, 0, 0, 1, 1, 1])
+
+    weighted_modularity = modularity(
+        G, communities=communities, weight_enabled=True
+    )
+    unweighted_modularity = modularity(
+        G, communities=communities, weight_enabled=False
+    )
+    default_modularity = modularity(G, communities=communities)
+
+    assert weighted_modularity != pytest.approx(unweighted_modularity)
+    assert default_modularity == pytest.approx(unweighted_modularity)
+
+
+# --------------------------------------------------------------------------------------------
+# TEST compute_network_metrics
+# --------------------------------------------------------------------------------------------
+
+
+def test_compute_network_metrics_detects_communities_by_default():
+    """Test automatic community detection with the default algorithm.
+
+    GIVEN: A graph with two disconnected triangles and no partition.
+    WHEN: Its network metrics are computed.
+    THEN: Louvain detects the two communities automatically.
+    """
+    G = ig.Graph(n=6)
+    G.add_edges([(0, 1), (1, 2), (2, 0), (3, 4), (4, 5), (5, 3)])
+
+    metrics = compute_network_metrics(G)
+
+    assert metrics["communities"] == 2
+    assert metrics["largest_community_fraction"] == pytest.approx(0.5)
+
+
+def test_compute_network_metrics_expected():
+    """Test the complete network-metrics summary.
+
+    GIVEN: A graph and its community partition.
+    WHEN: All network metrics are computed.
+    THEN: The expected metrics and values are returned.
+    """
+    G = ig.Graph(n=4)
+    G.add_edges([(0, 1), (1, 2), (2, 3), (0, 3)])
+    communities = ig.VertexClustering(G, membership=[0, 0, 1, 1])
+
+    metrics = compute_network_metrics(G, communities=communities)
+
+    assert set(metrics) == {
+        "nodes",
+        "edges",
+        "average_degree",
+        "density",
+        "connected_components",
+        "giant_component_fraction",
+        "average_clustering",
+        "communities",
+        "largest_community_fraction",
+        "modularity",
+    }
+    assert metrics["nodes"] == 4
+    assert metrics["edges"] == 4
+    assert metrics["communities"] == 2
+    assert metrics["largest_community_fraction"] == pytest.approx(0.5)
+    assert metrics["modularity"] == pytest.approx(
+        modularity(G, communities=communities, weight_enabled=False)
+    )

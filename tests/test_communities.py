@@ -1,7 +1,5 @@
 import pytest
 import igraph as ig
-import pandas as pd
-import numpy as np
 
 from metagenomes_simulation.communities import (
     community_infomap,

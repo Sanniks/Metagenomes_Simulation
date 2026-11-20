@@ -1,4 +1,5 @@
 import leidenalg
+import igraph as ig
 
 
 def community_louvain(graph, weight_enabled=False):
@@ -157,3 +158,46 @@ def find_communities(graph, weight_enabled=False, algorithm="louvain"):
             f"Unknown community detection algorithm: {algorithm}."
             f"Please select one of the following: {list(algorithms.keys())}"
         )
+
+
+def compare_communities(
+    observed_community_memberships, ground_truth_community_memberships
+):
+    """Compare two community partitions using VI, ARI, and NMI.
+
+    Args:
+        observed_community_memberships (list[int]): Community labels
+            obtained from the reconstructed network.
+        ground_truth_community_memberships (list[int]): True community
+            labels of the ground truth network.
+
+    Returns:
+        dict[str, float]: Community comparison metrics: - vi: Variation of
+            Information (lower is better). - ari: Adjusted Rand Index
+            (higher is better). - nmi: Normalized Mutual Information (higher
+            is better). Note: Both membership sequences must follow the same
+            node ordering. Nodes with missing community labels (None) are
+            excluded.
+    """
+
+    vi = ig.compare_communities(
+        ground_truth_community_memberships,
+        observed_community_memberships,
+        method="vi",
+        remove_none=True,
+    )
+    ari = ig.compare_communities(
+        ground_truth_community_memberships,
+        observed_community_memberships,
+        method="adjusted_rand",
+        remove_none=True,
+    )
+    nmi = ig.compare_communities(
+        ground_truth_community_memberships,
+        observed_community_memberships,
+        method="nmi",
+        remove_none=True,
+    )
+
+    results = {"vi": vi, "ari": ari, "nmi": nmi}
+    return results

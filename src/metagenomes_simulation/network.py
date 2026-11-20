@@ -1,195 +1,8 @@
 import numpy as np
 import pandas as pd
 import igraph as ig
-from itertools import combinations
 
-from metagenomes_simulation.correlation import measure_correlation_coefficient
-from metagenomes_simulation.normalization import remove_constant_otus
-
-# Parallel calculation
-from pathos.multiprocessing import ProcessingPool as Pool
-
-# --------------------------------------------------------------
-# Correlations matrix
-# --------------------------------------------------------------
-
-
-def create_correlation_matrix(otu_df, correlation_method="Pearson"):
-    """Create a matrix cointaining the correlation coefficients between
-    different OTUs using abundances data.
-
-    Correlation_method allow to choose between Pearson, Spearman and Kendall
-    coefficients.
-
-    If the data processing return a DataFrame with less then 2 otus,
-    correlation is impossible and the function returns an empty df.
-
-    Args:
-        otu_df (DataFrame): DataFrame containing the abundances of every
-            sample.
-        correlation_method (str, optional): Correlation method: "Pearson",
-            "Spearman", or "Kendall". Defaults to "Pearson".
-
-    Returns:
-        DataFrame: Correlation matrix between OTUs.
-    """
-
-    # Remove constant OTUs
-    otu_df_processed = remove_constant_otus(otu_df)
-    # Take the name of each OTU
-    otu_names = otu_df_processed.columns
-    # Convert from pandas dataframe to numpy matrix
-    otu_data = otu_df_processed.to_numpy()
-
-    # Return empty dataframe for less than 2
-    # non constant OTUs
-    if len(otu_names) < 2:
-        empty_dataframe = pd.DataFrame(
-            np.eye(len(otu_names)),
-            index=otu_names,
-            columns=otu_names,
-        )
-        return empty_dataframe
-
-    # Create empty dataframe
-    correlation_matrix = pd.DataFrame(
-        np.eye(len(otu_names)),
-        index=otu_names,
-        columns=otu_names,
-    )
-
-    # Measure correlation corefficient between every pair of otu
-    for i in range(len(otu_names)):
-        for j in range(i + 1, len(otu_names)):
-            otu_1 = otu_names[i]
-            otu_2 = otu_names[j]
-
-            corr_coeff = measure_correlation_coefficient(
-                otu_data[:, i],
-                otu_data[:, j],
-                correlation_method,
-            )
-
-            correlation_matrix.loc[otu_1, otu_2] = corr_coeff
-            correlation_matrix.loc[otu_2, otu_1] = corr_coeff
-
-    return correlation_matrix
-
-
-# --------------------------------------------------------------
-# Parallel version of correlation matrix creation
-# --------------------------------------------------------------
-
-
-def _compute_correlation_parallel(args):
-    """Compute correlation coefficients for a block of OTU index pairs.
-
-    Args:
-        args (tuple): A tuple containing:
-        otu_data (ndarray): 2D array of OTU abundances.
-        block (list[tuple[int, int]]): List of index pairs for correlations.
-        correlation_method (str): Correlation method to use.
-
-    Returns:
-        list[tuple[int, int, float]]: Correlation results for each index
-            pair.
-    """
-    otu_data, block, correlation_method = args
-
-    results = []
-    for i, j in block:
-        # compute the correlation coefficient for the pair of OTUs
-        corr = measure_correlation_coefficient(
-            otu_data[:, i],
-            otu_data[:, j],
-            correlation_method,
-        )
-        results.append((i, j, corr))
-    return results
-
-
-def create_correlation_matrix_parallel(
-    otu_df, correlation_method="Pearson", num_processes=4
-):
-    """Create a matrix cointaining the correlation coefficients between
-    different OTUs using abundances data.
-
-    Correlation_method allow to choose between Pearson, Spearman and Kendall
-    coefficients.
-
-    It allows for faster calculation time, by performing some calculations
-    in parallel.
-
-    If the data processing return a DataFrame with less then 2 otus,
-    correlation is impossible and the function returns an empty df.
-
-    Args:
-        otu_df (DataFrame): DataFrame containing the abundances of every
-            sample.
-        correlation_method (str, optional): Correlation method: "Pearson",
-            "Spearman", or "Kendall". Defaults to "Pearson".
-        num_processes (int, optional): Number of parallel processes.
-            Defaults to 4.
-
-    Returns:
-        DataFrame: Correlation matrix between OTUs.
-    """
-    if num_processes < 1:
-        raise ValueError("num_processes must be at least 1.")
-
-    # Remove constant OTUs
-    otu_df_processed = remove_constant_otus(otu_df)
-    # Take the name of each OTU
-    otu_names = otu_df_processed.columns
-
-    # Convert from pandas dataframe to numpy matrix
-    otu_data = otu_df_processed.to_numpy()
-
-    # Return empty dataframe for less than 2
-    # non constant OTUs
-    if len(otu_names) < 2:
-        empty_dataframe = pd.DataFrame(
-            np.eye(len(otu_names)),
-            index=otu_names,
-            columns=otu_names,
-        )
-        return empty_dataframe
-
-    # Create empty numpy matrix
-    correlation_matrix = np.eye(len(otu_names))
-
-    # Array containing all combination of OTUs for the
-    # calculation of every correlation coefficients
-    otu_combinations = combinations(range(len(otu_names)), 2)
-    tasks = list(otu_combinations)
-
-    # Divide the calculation in independet blocks
-    n = len(tasks)  # Total number of calculations
-    block_size = (n + num_processes - 1) // num_processes
-    blocks = [tasks[i : i + block_size] for i in range(0, n, block_size)]
-
-    # Arguments to pass to the function used in the parallel calculation
-    arguments_per_block = [
-        (otu_data, block, correlation_method) for block in blocks
-    ]
-    # Parallelization:
-    with Pool(nodes=num_processes) as pool:
-        results = pool.map(_compute_correlation_parallel, arguments_per_block)
-
-    for result in results:
-        for i, j, corr_coef in result:
-            correlation_matrix[i, j] = corr_coef
-            correlation_matrix[j, i] = corr_coef
-
-    # Convert numpy matrix in pandas dataframe
-    correlation_matrix_df = pd.DataFrame(
-        correlation_matrix,
-        index=otu_names,
-        columns=otu_names,
-    )
-
-    return correlation_matrix_df
-
+from metagenomes_simulation.communities import find_communities
 
 # --------------------------------------------------------------
 # Correlations network from correlation matrix using igraph
@@ -201,6 +14,7 @@ def create_network_from_correlation_matrix(
     threshold=0.1,
     remove_isolated=False,
     binary_network=False,
+    threshold_mode="absolute",
 ):
     """Create an igraph network from a correlation matrix.
 
@@ -237,7 +51,17 @@ def create_network_from_correlation_matrix(
     )
 
     # If an edge is lower to the threshold, it removes it
-    adjacency[adjacency.abs() < threshold] = 0
+    if threshold_mode == "absolute":
+        adjacency[adjacency.abs() < threshold] = 0
+
+    elif threshold_mode == "positive":
+        adjacency[adjacency < threshold] = 0
+
+    elif threshold_mode == "negative":
+        adjacency[adjacency > -threshold] = 0
+
+    else:
+        raise ValueError("Unknown threshold mode.")
 
     if binary_network:
         # If an edge is higher than the threshold, it makes it 1
@@ -268,3 +92,352 @@ def create_network_from_correlation_matrix(
         str(col) for col in filtered_correlation_matrix.columns
     ]
     return graph_ig
+
+
+# --------------------------------------------------------------
+# Network metrics (Using igraph networks)
+# --------------------------------------------------------------
+
+
+def number_of_nodes(graph):
+    """Return the number of nodes.
+
+    Args:
+        graph (ig.Graph): Input graph
+
+    Returns:
+        int: Number of nodes in the graph
+    """
+    return len(graph.vs)
+
+
+def number_of_edges(graph):
+    """Return the number of edges in the graph.
+
+    Args:
+        graph (ig.Graph): Input graph
+
+    Returns:
+        int: Number of edges in the graph
+    """
+    return len(graph.es)
+
+
+def average_degree(graph):
+    """Return the average number of neighbours per node for undirected graph.
+
+    Args:
+        graph (ig.Graph): Input graph
+
+    Returns:
+        float: Average degree of the graph
+    """
+    if graph.is_directed():
+        raise ValueError("average_degree requires an undirected graph")
+
+    n_nodes = number_of_nodes(graph)
+    n_edges = number_of_edges(graph)
+
+    if n_nodes == 0:
+        return 0.0
+    return 2 * n_edges / n_nodes
+
+
+def network_density(graph):
+    """Return the fraction of possible edges that are present.
+
+    Args:
+        graph (ig.Graph): Input graph
+
+    Returns:
+        float: Network density
+    """
+    n_nodes = number_of_nodes(graph)
+    n_edges = number_of_edges(graph)
+    if n_nodes <= 1:
+        return 0.0
+
+    max_possible_edges = n_nodes * (n_nodes - 1) / 2
+    return n_edges / max_possible_edges
+
+
+def average_clustering(graph, weight_enabled=False):
+    """Return the mean clustering coefficient of the graph.
+
+    Measures how interconnected a node's neighbors are, on average
+    (indicates the tendency of the network to form tightly-knit groups or
+    "triangles").
+
+    By default, edge weights are ignored. When weights are considered, the
+    absolute value is taken. This is useful for correlation networks because
+    their weights can be negative.
+
+    This function uses igraph built-in function for average clustering
+    calculation: "transitivity_avglocal_undirected" where mode ="zero" is
+    selected. Using mode = "zero" tells to include isolated nodes in the
+    calculation, adding 0 to the average sum. The alternative, mode = "nan",
+    exclude the isolated nodes, resulting in an higher average. "nan" can
+    hide the fact that most of the nodes are isolated, so in this case
+    "zero" is more representative.
+
+    Args:
+        graph (ig.Graph): Input graph
+        weight_enabled (bool): True if edge weights should be used. Default
+            is False
+
+    Returns:
+        float: Average clustering coefficient
+    """
+    if number_of_nodes(graph) == 0:
+        return 0.0
+
+    if weight_enabled:
+        if "weight" not in graph.es.attributes():
+            raise ValueError(
+                "weight_enabled=True requires an edge attribute named 'weight'"
+            )
+
+        # Use weighted clustering if weights are provided
+        weights = [abs(weight) for weight in graph.es["weight"]]
+
+        avr_clustering = graph.transitivity_avglocal_undirected(
+            weights=weights, mode="zero"
+        )
+    else:
+        avr_clustering = graph.transitivity_avglocal_undirected(mode="zero")
+
+    return avr_clustering
+
+
+def number_of_connected_components(graph):
+    """Return the number of connected components.
+
+    Args:
+        graph (ig.Graph): Input graph
+
+    Returns:
+        int: Number of connected components
+    """
+    components = graph.connected_components()
+    return len(components)
+
+
+def largest_connected_component(graph):
+    """Return the largest connected component as a new graph.
+
+    Return None if the graph has no nodes.
+
+    Args:
+        graph (ig.Graph): Input graph
+
+    Returns:
+        ig.Graph: Largest connected component as a subgraph
+    """
+    if number_of_nodes(graph) == 0:
+        return None
+
+    components = graph.connected_components()
+
+    largest_comp = max(components, key=len)
+
+    return graph.subgraph(largest_comp)
+
+
+def giant_component_fraction(graph):
+    """Return the fraction of nodes in the largest connected component.
+
+    Args:
+        graph (ig.Graph): Input graph
+
+    Returns:
+        float: Fraction of nodes in the largest connected component
+    """
+    n_nodes = number_of_nodes(graph)
+    if n_nodes == 0:
+        return 0.0
+
+    largest_component = largest_connected_component(graph)
+    return number_of_nodes(largest_component) / n_nodes
+
+
+def modularity(
+    graph, communities=None, weight_enabled=False, algorithm="louvain"
+):
+    """Return the modularity of a community partition.
+
+    If no partition is supplied, communities are detected automatically.
+    Modularity is defined as zero for graphs without edges.
+
+    Args:
+        graph (ig.Graph): Input graph
+        communities (ig.VertexClustering): List of communities as sets of
+            nodes
+        weight_enabled (bool): True if edge weights should be used, False
+            otherwise
+        algorithm (str): Algorithm for automatic community detection if
+            communities=None. Choose between: "louvain", "leiden",
+            "infomap", "walktrap".
+
+    Returns:
+        float: Modularity value
+    """
+    if number_of_edges(graph) == 0:
+        return 0.0
+    # If a community is not in the arguments, compute it
+    if communities is None:
+        communities = find_communities(
+            graph, weight_enabled=weight_enabled, algorithm=algorithm
+        )
+
+    # Calculate modularity using igraph
+    if weight_enabled:
+        edge_weights = [abs(w) for w in graph.es["weight"]]
+        return graph.modularity(communities.membership, weights=edge_weights)
+    else:
+        return graph.modularity(communities.membership)
+
+
+def compute_network_metrics(
+    graph, communities=None, weight_enabled=False, algorithm="louvain"
+):
+    """Compute the main metrics of a single network.
+
+    Args:
+        graph (ig.Graph): Input graph
+        communities (ig.VertexClustering, optional): Precomputed community
+            partition. If omitted, it is detected using algorithm.
+        weight_enabled (bool): True if edge weights should be used, False
+            otherwise
+        algorithm (str, optional): Algorithm for automatic community
+            detection. Choose between "louvain", "leiden", "infomap", and
+            "walktrap". Defaults to "louvain".
+
+    Returns:
+        dict: Dictionary of network metrics
+    """
+    if communities is None:
+        communities = find_communities(
+            graph,
+            algorithm=algorithm,
+            weight_enabled=weight_enabled,
+        )
+
+    n_nodes = number_of_nodes(graph)
+    n_communities = len(communities) if communities is not None else 0
+    largest_community_fraction = (
+        max(len(community) for community in communities) / n_nodes
+        if n_communities > 0 and n_nodes > 0
+        else 0.0
+    )
+
+    metrics = {
+        "nodes": n_nodes,
+        "edges": number_of_edges(graph),
+        "average_degree": average_degree(graph),
+        "density": network_density(graph),
+        "connected_components": number_of_connected_components(graph),
+        "giant_component_fraction": giant_component_fraction(graph),
+        "average_clustering": average_clustering(
+            graph, weight_enabled=weight_enabled
+        ),
+        "communities": n_communities,
+        "largest_community_fraction": largest_community_fraction,
+        "modularity": modularity(
+            graph,
+            communities=communities,
+            weight_enabled=weight_enabled,
+            algorithm=algorithm,
+        ),
+    }
+    return metrics
+
+
+# ---------------------------------------------------------------------------
+# Comparison metrics
+# --------------------------------------------------------------------------
+
+
+def compare_network_edges(network, ground_truth_network):
+    """Compare the edges of observed and ground-truth correlation networks.
+
+    Compare two undirected networks by considering the presence or absence
+    of edges, independently of their weights and signs.
+
+    Args:
+        network (ig.Graph): Reconstructed correlation network.
+        ground_truth_network (ig.Graph): Ground-truth correlation network.
+
+    Returns:
+        dict: True positives (tp), false positives (fp), false negatives
+            (fn), precision, recall, F1 score, and Jaccard similarity.
+            Metrics are set to zero when their denominator is zero.
+
+    Raises:
+        `ValueError`: If the inputs are not igraph graphs, are directed, are
+                not simple graphs, or do not contain the same taxa in the
+                same order.
+    """
+    if not isinstance(network, ig.Graph):
+        raise ValueError("network must be an igraph Graph.")
+
+    if not isinstance(ground_truth_network, ig.Graph):
+        raise ValueError("ground_truth_network must be an igraph Graph.")
+
+    if network.is_directed() or ground_truth_network.is_directed():
+        raise ValueError("Input networks must be undirected.")
+
+    if not network.is_simple() or not ground_truth_network.is_simple():
+        raise ValueError("Input networks must be simple graphs.")
+
+    if network.vcount() != ground_truth_network.vcount():
+        raise ValueError("Input networks must have the same number of nodes.")
+
+    if (
+        "name" not in network.vs.attributes()
+        or "name" not in ground_truth_network.vs.attributes()
+    ):
+        raise ValueError("Network nodes must have names.")
+
+    if network.vs["name"] != ground_truth_network.vs["name"]:
+        raise ValueError("Input networks must contain the same ordered taxa.")
+
+    # Count true positives, false positives and false negatives
+    tp = (network & ground_truth_network).ecount()
+    fp = (network - ground_truth_network).ecount()
+    fn = (ground_truth_network - network).ecount()
+
+    # Precision
+    if tp + fp:
+        precision = tp / (tp + fp)
+    else:
+        precision = 0
+
+    # Recall
+    if tp + fn:
+        recall = tp / (tp + fn)
+    else:
+        recall = 0
+
+    # F1 score
+    if 2 * tp + fp + fn:
+        f1 = 2 * tp / (2 * tp + fp + fn)
+    else:
+        f1 = 0
+
+    # Jaccard similarity
+    if tp + fp + fn:
+        jaccard = tp / (tp + fp + fn)
+    else:
+        jaccard = 0
+
+    results = {
+        "tp": tp,
+        "fp": fp,
+        "fn": fn,
+        "precision": precision,
+        "recall": recall,
+        "f1": f1,
+        "jaccard": jaccard,
+    }
+
+    return results
