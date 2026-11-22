@@ -4,9 +4,9 @@ import pandas._testing as pdt
 
 import pytest
 
-from metagenomes_simulation.metrics import network_density
 from metagenomes_simulation.network import (
     create_network_from_correlation_matrix,
+    network_density,
 )
 
 from metagenomes_simulation.generators import (
@@ -882,27 +882,27 @@ def test_simulate_sequencing_work_correctly():
 
 
 def test_simulate_sequencing_rows_sum_to_sequencing_depth():
-    """This tests that every sequencing sample has the requested number of
-    counts.
+    """This tests that every sequencing sample fluctuate around the
+    requested number of counts.
 
-    GIVEN: valid absolute abundances and one thousand counts per sample
-    WHEN: I simulate sequencing
-    THEN: the sum of every dataframe row is equal to one thousand
+    GIVEN: absolute abundances for 1000 samples
+    WHEN: I simulate sequencing sequencing with a mean depth of 1000
+    THEN: sequencing depths have a mean close to 1000
     """
     correlation_matrix = create_block_correlation([1], 0.4, 0.1)
 
     absolute_abundance_matrix = simulate_absolute_abundances_ground_truth(
         correlation_matrix=correlation_matrix,
-        n_sample=2,
+        n_sample=1000,
         random_state=12,
     )
+
     sequencing_df = simulate_sequencing(
         absolute_abundance_matrix, sequencing_depth=1000, random_state=12
     )
 
-    np.testing.assert_array_equal(
-        sequencing_df.sum(axis=1).to_numpy(), [1000, 1000]
-    )
+    depths = sequencing_df.sum(axis=1)
+    assert np.isclose(depths.mean(), 1000, atol=5)
 
 
 def test_simulate_sequencing_accepts_integer_scientific_notation():
@@ -923,9 +923,7 @@ def test_simulate_sequencing_accepts_integer_scientific_notation():
         absolute_abundance_matrix, 1e3, random_state=12
     )
 
-    np.testing.assert_array_equal(
-        sequencing_df.sum(axis=1).to_numpy(), [1e3, 1e3]
-    )
+    assert sequencing_df.shape == absolute_abundance_matrix.shape
 
 
 def test_simulate_sequencing_reproducible():
