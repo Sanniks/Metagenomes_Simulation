@@ -1,9 +1,6 @@
 import pytest
-
 import pandas as pd
-import pandas._testing as pdt
-
-import numpy as np
+import pandas.testing as pdt
 
 from metagenomes_simulation.raw_processing import (
     group_otu_by_subject,
