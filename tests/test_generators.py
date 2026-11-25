@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-import pandas._testing as pdt
+import pandas.testing as pdt
 
 import pytest
 
@@ -552,6 +552,34 @@ def test_create_sparse_block_correlation_returns_expected_memberships():
     np.testing.assert_array_equal(memberships, expected)
 
 
+def test_create_sparse_block_correlation_requires_scaling():
+    """This tests that the correlation matrix is rescaled when needed.
+
+    GIVEN: high correlation values and a sparse block structure
+    WHEN: I create the sparse block correlation matrix
+    THEN: the matrix is positive definite and its minimum
+        eigenvalue is equal to epsilon within numerical tolerance
+    """
+    corr_matrix, _ = create_sparse_block_correlation(
+        block_sizes=[20, 20],
+        within_density=0.5,
+        between_density=0.2,
+        correlation_range=(0.8, 0.99),
+        random_state=12,
+    )
+
+    eigenvalues = np.linalg.eigvalsh(corr_matrix.to_numpy())
+
+    assert np.all(eigenvalues > 0)
+
+    assert np.isclose(
+        eigenvalues.min(),
+        1e-6,
+        atol=1e-10,
+        rtol=0,
+    )
+
+
 @pytest.mark.parametrize(
     "invalid_arguments",
     [
@@ -563,6 +591,10 @@ def test_create_sparse_block_correlation_returns_expected_memberships():
         {"block_sizes": [3, 2.5]},
         {"block_sizes": 3},
         {"random_state": 12.5},
+        {"correlation_range": (-0.1, 0.1)},
+        {"correlation_range": (0.6, 0.2)},
+        {"correlation_range": (0.4, 1)},
+        {"correlation_range": 1.2},
     ],
 )
 def test_create_sparse_block_correlation_error_invalid_inputs(
@@ -570,7 +602,8 @@ def test_create_sparse_block_correlation_error_invalid_inputs(
 ):
     """This tests that invalid input parameters raise an error.
 
-    GIVEN: invalid densities, block sizes, or random state
+    GIVEN: invalid densities, block sizes, correlation ranges,
+        or random state
     WHEN: I create the sparse block correlation matrix
     THEN: the function raises an error
     """
@@ -961,20 +994,6 @@ def test_simulate_sequencing_error_non_matrix_input():
         simulate_sequencing(np.array([10, 10]), 1000)
 
 
-def test_simulate_sequencing_error_negative_abundance():
-    """This tests that a negative absolute abundance raises an error.
-
-    GIVEN: an absolute abundance matrix containing a negative value
-    WHEN: I simulate sequencing
-    THEN: the function raises an error
-    """
-    with pytest.raises(ValueError):
-        simulate_sequencing(
-            pd.DataFrame([[2, -17, 4]], columns=["OTU1", "OTU2", "OTU3"]),
-            1000,
-        )
-
-
 def test_simulate_sequencing_error_empty_abundance():
     """This tests that an empty absolute abundance raises an error.
 
@@ -982,11 +1001,9 @@ def test_simulate_sequencing_error_empty_abundance():
     WHEN: I simulate sequencing
     THEN: the function raises an error
     """
+    abundance = pd.DataFrame([], columns=["OTU1", "OTU2", "OTU3"])
     with pytest.raises(ValueError):
-        simulate_sequencing(
-            pd.DataFrame([], columns=["OTU1", "OTU2", "OTU3"]),
-            1000,
-        )
+        simulate_sequencing(abundance)
 
 
 def test_simulate_sequencing_error_non_positive_sequencing_depth():
@@ -1041,6 +1058,49 @@ def test_simulate_sequencing_error_invalid_random_state():
     )
     with pytest.raises(ValueError):
         simulate_sequencing(absolute_abundance_matrix, 1000, random_state=12.5)
+
+
+@pytest.mark.parametrize("value", [np.inf, -np.inf, np.nan])
+def test_simulate_sequencing_error_non_finite_abundance(value):
+    """This tests that non-finite abundances raise an error.
+
+    GIVEN: an abundance matrix containing a non-finite value
+    WHEN: I simulate sequencing
+    THEN: the function raises an error
+    """
+    absolute_abundance_matrix = pd.DataFrame({"OTU_1": [value]})
+
+    with pytest.raises(ValueError):
+        simulate_sequencing(absolute_abundance_matrix)
+
+
+def test_simulate_sequencing_error_negative_abundance():
+    """This tests that negative abundances raise an error.
+
+    GIVEN: an abundance matrix containing a negative value
+    WHEN: I simulate sequencing
+    THEN: the function raises an error
+    """
+    absolute_abundance_matrix = pd.DataFrame({"OTU_1": [-1]})
+
+    with pytest.raises(ValueError):
+        simulate_sequencing(absolute_abundance_matrix)
+
+
+def test_simulate_sequencing_error_zero_total_abundance():
+    """This tests that samples with zero total abundance raise an error.
+
+    GIVEN: an abundance matrix containing a sample with zero total abundance
+    WHEN: I simulate sequencing
+    THEN: the function raises an error
+    """
+    absolute_abundance_matrix = pd.DataFrame(
+        [[10, 20, 30], [0, 0, 0]],
+        columns=["OTU_1", "OTU_2", "OTU_3"],
+    )
+
+    with pytest.raises(ValueError):
+        simulate_sequencing(absolute_abundance_matrix)
 
 
 # --------------------------------------------------------------------------------------------
