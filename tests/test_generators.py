@@ -914,6 +914,33 @@ def test_simulate_sequencing_work_correctly():
     )
 
 
+def test_simulate_sequencing_poisson_depth():
+    """This tests the statistical moments of the sequencing depth.
+
+    GIVEN: 10000 samples with identical absolute abundances
+    WHEN: I simulate sequencing with a mean depth of 1000
+    THEN: both the mean and variance of the sequencing depth
+        are close to 1000
+    """
+    sequencing_depth = 1000
+
+    abundance_matrix = pd.DataFrame(
+        np.ones((10000, 3)),
+        columns=["OTU1", "OTU2", "OTU3"],
+    )
+
+    sequencing_df = simulate_sequencing(
+        abundance_matrix,
+        sequencing_depth=sequencing_depth,
+        random_state=12,
+    )
+
+    depths = sequencing_df.sum(axis=1)
+
+    assert np.isclose(depths.mean(), sequencing_depth, rtol=0.01)
+    assert np.isclose(depths.var(), sequencing_depth, rtol=0.05)
+
+
 def test_simulate_sequencing_rows_sum_to_sequencing_depth():
     """This tests that every sequencing sample fluctuate around the
     requested number of counts.
