@@ -1,7 +1,3 @@
-import numpy as np
-import pandas as pd
-
-
 def group_otu_by_subject(otu_df, meta_df):
     """Split the raw OTUs table in different tables per subject.
 
