@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 
 
-def substitute_zero(otu_df, delta=None):
+def normalize_and_substitute_zeros(otu_df, delta=None):
     """Replace zero abundances using multiplicative replacement.
 
     Constant OTUs are first removed with :func:`remove_constant_otus`. Each
@@ -45,6 +45,9 @@ def substitute_zero(otu_df, delta=None):
         delta = 1 / n_components**2
     if delta < 0:
         raise ValueError("'delta' cannot be negative.")
+    if np.any(n_zeros * delta >= 1):
+        raise ValueError("delta is too large.")
+    
     scaling_factor = 1 - n_zeros * delta
     otu_replaced = proportions * scaling_factor
     otu_replaced[otu_replaced == 0] = delta
@@ -113,7 +116,7 @@ def absolute_to_clr_abundance(otu_df, delta=None):
     Returns:
         pd.DataFrame: Dataframe with centered log-ratio abundances.
     """
-    otu_no_zeros = substitute_zero(otu_df, delta=delta)
+    otu_no_zeros = normalize_and_substitute_zeros(otu_df, delta=delta)
     log_otu = np.log(otu_no_zeros)
     otu_clr = log_otu.sub(log_otu.mean(axis=1), axis=0)
 
