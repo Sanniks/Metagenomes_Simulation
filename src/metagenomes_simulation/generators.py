@@ -242,13 +242,13 @@ def create_sparse_block_correlation(
     if random_state is not None and not isinstance(random_state, int):
         raise ValueError("random_state must be an integer or None.")
 
+    rng = np.random.default_rng(random_state)
+
     correlation_memberships = np.repeat(
         np.arange(len(block_sizes)), block_sizes
     )
-    rng = np.random.default_rng(random_state)
 
     n_taxa = sum(block_sizes)
-
     correlation_matrix = np.eye(n_taxa)
 
     for i in range(n_taxa):
@@ -267,7 +267,6 @@ def create_sparse_block_correlation(
                 weight = rng.uniform(
                     correlation_range[0], correlation_range[1]
                 )
-
                 correlation_matrix[i, j] = weight
                 correlation_matrix[j, i] = weight
 
@@ -439,54 +438,55 @@ def simulate_sequencing(
 ):
     """Simulate sequencing counts from an absolute abundance matrix.
 
-    The absolute abundance matrix is normalized to a relative abundance
-    matrix. For each sample, the relative abundances are used as
-    probabilities in a multinomial distribution. The resulting row contains
-    exactly 'sequencing_depth' integer counts distributed among the OTUs.
+    Convert absolute abundances into relative abundances and simulate
+    sequencing counts for each sample using a multinomial distribution.
+
+    The sequencing depth of each sample is independently drawn from a
+    Poisson distribution with mean sequencing_depth.
 
     Args:
-        abundance_matrix (pd.DataFrame): Abundances with samples in rows and
-            taxa in columns. Every row must sum to one.
-        sequencing_depth (int): Total number of sequencing counts in each
-            sample.
-        random_state (int, optional): Seed used for reproducible random
-            generation. If None, fresh entropy is used. Default None.
-
-    Raises:
-        `ValueError`: Raises error if the input is not a non-empty
-                DataFrame.
-        `ValueError`: Raises error if relative abundances are invalid or do
-                not sum to one.
-        `ValueError`: Raises error if sequencing_depth is not a positive
-                integer.
-        `ValueError`: Raises error if random_state is not an integer or
-                None.
+        abundance_matrix (pd.DataFrame): Absolute abundances with samples in
+            rows and taxa in columns. Values must be non-negative, with a
+            positive total abundance for each sample.
+        sequencing_depth (int): Mean sequencing depth per sample. Defaults
+            to 1000.
+        random_state (int or None): Random seed for reproducibility.
+            Defaults to None.
 
     Returns:
         pd.DataFrame: Integer sequencing counts with samples in rows and
             OTUs in columns.
     """
-    # abundance_matrix check
     if not isinstance(abundance_matrix, pd.DataFrame):
         raise ValueError("abundance_matrix must be a pandas DataFrame.")
     if abundance_matrix.empty:
         raise ValueError("abundance_matrix must be a non-empty DataFrame.")
-    if np.any(abundance_matrix < 0):
+    if not np.isfinite(abundance_matrix.to_numpy()).all():
+        raise ValueError("abundance_matrix must contain finite values.")
+    if np.any(abundance_matrix.to_numpy() < 0):
         raise ValueError("abundance_matrix cannot contain negative values.")
+    if np.any(abundance_matrix.sum(axis=1) <= 0):
+        raise ValueError("Each sample must have positive total abundance.")
 
-    # sequencing_depth check
     if (
         not isinstance(sequencing_depth, (int, float))
+        or not np.isfinite(sequencing_depth)
         or sequencing_depth <= 0
         or not float(sequencing_depth).is_integer()
     ):
         raise ValueError("sequencing_depth must be a positive integer.")
 
-    # random_state check
     if random_state is not None and not isinstance(random_state, int):
         raise ValueError("random_state must be an integer or None.")
 
-    sequencing_depth = int(sequencing_depth)
+    rng = np.random.default_rng(random_state)
+
+    n_sample = abundance_matrix.shape[0]
+
+    depths = rng.poisson(
+        lam=sequencing_depth,
+        size=n_sample,
+    )
 
     relative_abundance_matrix = absolute_to_relative_abundance(
         abundance_matrix
@@ -494,19 +494,20 @@ def simulate_sequencing(
 
     relative_values = relative_abundance_matrix.to_numpy()
 
-    rng = np.random.default_rng(random_state)
-    sequencing_counts = np.array(
-        [
-            rng.multinomial(sequencing_depth, sample_probabilities)
-            for sample_probabilities in relative_values
-        ]
-    )
+    sequencing_counts = []
+
+    for depth, sample_probabilities in zip(depths, relative_values):
+        counts = rng.multinomial(depth, sample_probabilities)
+        sequencing_counts.append(counts)
+
+    sequencing_counts = np.array(sequencing_counts)
 
     sequencing_df = pd.DataFrame(
         sequencing_counts,
         index=relative_abundance_matrix.index,
         columns=relative_abundance_matrix.columns,
     )
+
     return sequencing_df
 
 
