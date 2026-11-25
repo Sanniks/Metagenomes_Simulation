@@ -7,6 +7,7 @@ from metagenomes_simulation.communities import (
     community_louvain,
     community_walktrap,
     find_communities,
+    compare_communities,
 )
 
 
@@ -143,3 +144,58 @@ def test_find_communities_graph_without_edges():
     THEN: No partition is returned.
     """
     assert find_communities(ig.Graph(n=3)) is None
+
+
+# --------------------------------------------------------------------------------------------
+# TEST compare_community
+# --------------------------------------------------------------------------------------------
+
+
+def test_compare_communities_identical_partitions():
+    """This tests the comparison of identical community partitions.
+
+    GIVEN: two identical community partitions
+    WHEN: I compare their community memberships
+    THEN: VI is zero, while ARI and NMI are equal to one
+    """
+    memberships = [0, 0, 1, 1, 2, 2]
+
+    results = compare_communities(memberships, memberships)
+
+    assert results["vi"] == pytest.approx(0)
+    assert results["ari"] == pytest.approx(1)
+    assert results["nmi"] == pytest.approx(1)
+
+
+def test_compare_communities_permuted_labels():
+    """This tests invariance under community label permutation.
+
+    GIVEN: two equivalent partitions with different community labels
+    WHEN: I compare their community memberships
+    THEN: the partitions are identified as identical
+    """
+    observed = [0, 0, 1, 1, 2, 2]
+    ground_truth = [2, 2, 0, 0, 1, 1]
+
+    results = compare_communities(observed, ground_truth)
+
+    assert results["vi"] == pytest.approx(0)
+    assert results["ari"] == pytest.approx(1)
+    assert results["nmi"] == pytest.approx(1)
+
+
+def test_compare_communities_remove_none():
+    """This tests the exclusion of missing community memberships.
+
+    GIVEN: two community partitions containing missing memberships
+    WHEN: I compare them with remove_none enabled
+    THEN: nodes with missing memberships are excluded
+    """
+    observed = [0, 0, None, 1, 1]
+    ground_truth = [0, 0, 2, 1, 1]
+
+    results = compare_communities(observed, ground_truth, remove_none=True)
+
+    assert results["vi"] == pytest.approx(0)
+    assert results["ari"] == pytest.approx(1)
+    assert results["nmi"] == pytest.approx(1)
