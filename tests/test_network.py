@@ -151,7 +151,7 @@ def test_create_network_from_correlation_matrix_binary_weights():
     assert G.es[G.get_eid("OTU2", "OTU3")]["weight"] == 1
 
 
-def test_create_network_binary_with_zero_threshold_keeps_one():
+def test_create_network_from_correlation_matrix_binary_with_zero_threshold_keeps_one():
     """This tests a binary network with a one threshold.
     Edge case for threshold.
 
@@ -174,7 +174,7 @@ def test_create_network_binary_with_zero_threshold_keeps_one():
     assert G.ecount() == 0
 
 
-def test_create_network_rejects_threshold_outside_valid_range():
+def test_create_network_from_correlation_matrix_rejects_threshold_outside_valid_range():
     """This tests invalid threshold values.
 
     GIVEN: a correlation matrix
@@ -189,18 +189,16 @@ def test_create_network_rejects_threshold_outside_valid_range():
 
     with pytest.raises(ValueError):
         create_network_from_correlation_matrix(
-            correlation_matrix,
-            threshold=-0.1,
+            correlation_matrix, threshold=-0.1
         )
 
     with pytest.raises(ValueError):
         create_network_from_correlation_matrix(
-            correlation_matrix,
-            threshold=1.1,
+            correlation_matrix, threshold=1.1
         )
 
 
-def test_create_network_keeps_edge_equal_to_threshold():
+def test_create_network_from_correlation_matrix_keeps_edge_equal_to_threshold():
     """This tests a correlation equal to the threshold.
 
     GIVEN: a correlation equal to the threshold
@@ -224,7 +222,7 @@ def test_create_network_keeps_edge_equal_to_threshold():
     assert G.es[0]["weight"] == 0.5
 
 
-def test_create_network_removes_all_isolated_nodes():
+def test_create_network_from_correlation_matrix_removes_all_isolated_nodes():
     """This tests removal when every node is isolated.
 
     GIVEN: a matrix without correlations between different OTUs
@@ -244,6 +242,64 @@ def test_create_network_removes_all_isolated_nodes():
 
     assert G.vcount() == 0
     assert G.ecount() == 0
+
+
+@pytest.mark.parametrize(
+    "threshold_mode, expected_edges",
+    [
+        ("absolute", 2),
+        ("positive", 1),
+        ("negative", 1),
+    ],
+)
+def test_create_network_from_correlation_matrix_threshold_modes(
+    threshold_mode, expected_edges
+):
+    """This tests the different threshold modes.
+
+    GIVEN: a correlation matrix containing positive and negative
+        correlations above and below the threshold
+    WHEN: I create a network using a specific threshold mode
+    THEN: only the edges satisfying the threshold condition are retained
+    """
+    corr_matrix = pd.DataFrame(
+        [
+            [1.0, 0.8, -0.7],
+            [0.8, 1.0, 0.2],
+            [-0.7, 0.2, 1.0],
+        ],
+        index=["OTU1", "OTU2", "OTU3"],
+        columns=["OTU1", "OTU2", "OTU3"],
+    )
+
+    network = create_network_from_correlation_matrix(
+        corr_matrix,
+        threshold=0.5,
+        threshold_mode=threshold_mode,
+    )
+
+    assert network.ecount() == expected_edges
+
+
+def test_create_network_from_correlation_matrix_invalid_threshold_mode():
+    """This tests that an invalid threshold mode raises an error.
+
+    GIVEN: a valid correlation matrix and an unknown threshold mode
+    WHEN: I create the network
+    THEN: the function raises a ValueError
+    """
+    corr_matrix = pd.DataFrame(
+        [[1.0, 0.8], [0.8, 1.0]],
+        index=["OTU1", "OTU2"],
+        columns=["OTU1", "OTU2"],
+    )
+
+    with pytest.raises(ValueError, match="Unknown threshold mode"):
+        create_network_from_correlation_matrix(
+            corr_matrix,
+            threshold=0.5,
+            threshold_mode="invalid",
+        )
 
 
 # --------------------------------------------------------------------------------------------
@@ -647,3 +703,245 @@ def test_compute_network_metrics_expected():
     assert metrics["modularity"] == pytest.approx(
         modularity(G, communities=communities, weight_enabled=False)
     )
+
+
+# --------------------------------------------------------------------------------------------
+# TEST compare_network_edges
+# --------------------------------------------------------------------------------------------
+
+
+def test_compare_network_edges_expected():
+    """This tests the calculation of network comparison metrics.
+
+    GIVEN: two networks with shared and different edges
+    WHEN: I compare their edges
+    THEN: the expected comparison metrics are returned
+    """
+    network = ig.Graph(
+        n=4,
+        edges=[(0, 1), (0, 2), (1, 2)],
+    )
+    ground_truth_network = ig.Graph(
+        n=4,
+        edges=[(0, 1), (0, 2), (2, 3)],
+    )
+
+    network.vs["name"] = ["OTU1", "OTU2", "OTU3", "OTU4"]
+    ground_truth_network.vs["name"] = network.vs["name"]
+
+    results = compare_network_edges(network, ground_truth_network)
+
+    expected = {
+        "tp": 2,
+        "fp": 1,
+        "fn": 1,
+        "precision": 2 / 3,
+        "recall": 2 / 3,
+        "f1": 2 / 3,
+        "jaccard": 1 / 2,
+    }
+
+    assert results == pytest.approx(expected)
+
+
+def test_compare_network_edges_identical_networks():
+    """This tests the comparison of identical networks.
+
+    GIVEN: two networks containing the same edges
+    WHEN: I compare their edges
+    THEN: all edges are true positives and all scores are one
+    """
+    network = ig.Graph(n=3, edges=[(0, 1), (1, 2)])
+    network.vs["name"] = ["OTU1", "OTU2", "OTU3"]
+
+    results = compare_network_edges(network, network.copy())
+
+    expected = {
+        "tp": 2,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1,
+        "recall": 1,
+        "f1": 1,
+        "jaccard": 1,
+    }
+
+    assert results == pytest.approx(expected)
+
+
+@pytest.mark.parametrize(
+    "observed_edges, ground_truth_edges, expected_fp, expected_fn",
+    [
+        ([], [], 0, 0),
+        ([(0, 1)], [], 1, 0),
+        ([], [(0, 1)], 0, 1),
+    ],
+)
+def test_compare_network_edges_empty_networks(
+    observed_edges, ground_truth_edges, expected_fp, expected_fn
+):
+    """This tests network comparison when edges are absent.
+
+    GIVEN: two networks with at least one network containing no edges
+    WHEN: I compare their edges
+    THEN: the expected edge counts are returned and all scores are zero
+    """
+    network = ig.Graph(n=3, edges=observed_edges)
+    ground_truth_network = ig.Graph(n=3, edges=ground_truth_edges)
+
+    network.vs["name"] = ["OTU1", "OTU2", "OTU3"]
+    ground_truth_network.vs["name"] = network.vs["name"]
+
+    results = compare_network_edges(network, ground_truth_network)
+
+    expected = {
+        "tp": 0,
+        "fp": expected_fp,
+        "fn": expected_fn,
+        "precision": 0,
+        "recall": 0,
+        "f1": 0,
+        "jaccard": 0,
+    }
+
+    assert results == pytest.approx(expected)
+
+
+def test_compare_network_edges_ignores_weights():
+    """This tests that edge comparison ignores weights and signs.
+
+    GIVEN: two networks with identical edges but different weights
+    WHEN: I compare their edges
+    THEN: the networks are considered identical
+    """
+    network = ig.Graph(n=3, edges=[(0, 1), (1, 2)])
+    network.vs["name"] = ["OTU1", "OTU2", "OTU3"]
+    network.es["weight"] = [0.8, -0.6]
+
+    ground_truth_network = network.copy()
+    ground_truth_network.es["weight"] = [-0.9, 0.3]
+
+    results = compare_network_edges(network, ground_truth_network)
+
+    assert results["tp"] == 2
+    assert results["fp"] == 0
+    assert results["fn"] == 0
+    assert results["f1"] == pytest.approx(1)
+    assert results["jaccard"] == pytest.approx(1)
+
+
+def test_compare_network_edges_error_network_not_igraph():
+    """This tests that an invalid observed network raises an error.
+
+    GIVEN: an observed network that is not an igraph Graph
+    WHEN: I compare the network edges
+    THEN: the function raises an error
+    """
+    network = 4
+    ground_truth_network = ig.Graph()
+    with pytest.raises(ValueError):
+        compare_network_edges(network, ground_truth_network)
+
+
+def test_compare_network_edges_error_ground_truth_network_not_igraph():
+    """This tests that an invalid ground-truth network raises an error.
+
+    GIVEN: a ground-truth network that is not an igraph Graph
+    WHEN: I compare the network edges
+    THEN: the function raises an error
+    """
+    network = ig.Graph()
+    ground_truth_network = 4
+    with pytest.raises(ValueError):
+        compare_network_edges(network, ground_truth_network)
+
+
+def test_compare_network_edges_error_directed_network():
+    """This tests that directed networks raise an error.
+
+    GIVEN: a directed network and an undirected network
+    WHEN: I compare the network edges
+    THEN: the function raises an error
+    """
+    network = ig.Graph(n=3, directed=True)
+    ground_truth_network = ig.Graph(n=3)
+
+    with pytest.raises(ValueError):
+        compare_network_edges(network, ground_truth_network)
+
+
+def test_compare_network_edges_error_self_loop():
+    """This tests that networks containing self-loops raise an error.
+
+    GIVEN: a network containing a self-loop
+    WHEN: I compare the network edges
+    THEN: the function raises an error
+    """
+    network = ig.Graph(n=3, edges=[(0, 0)])
+    ground_truth_network = ig.Graph(n=3)
+
+    with pytest.raises(ValueError):
+        compare_network_edges(network, ground_truth_network)
+
+
+def test_compare_network_edges_error_different_node_count():
+    """This tests that networks with different node counts raise an error.
+
+    GIVEN: two networks containing different numbers of nodes
+    WHEN: I compare the network edges
+    THEN: the function raises an error
+    """
+    network = ig.Graph(n=3)
+    ground_truth_network = ig.Graph(n=4)
+
+    with pytest.raises(ValueError):
+        compare_network_edges(network, ground_truth_network)
+
+
+def test_compare_network_edges_error_missing_node_names():
+    """This tests that networks without node names raise an error.
+
+    GIVEN: a network without node names
+    WHEN: I compare the network edges
+    THEN: the function raises an error
+    """
+    network = ig.Graph(n=3)
+    ground_truth_network = ig.Graph(n=3)
+    ground_truth_network.vs["name"] = ["OTU1", "OTU2", "OTU3"]
+
+    with pytest.raises(ValueError):
+        compare_network_edges(network, ground_truth_network)
+
+
+def test_compare_network_edges_error_different_node_names():
+    """This tests that networks containing different taxa raise an error.
+
+    GIVEN: two networks containing different node names
+    WHEN: I compare the network edges
+    THEN: the function raises an error
+    """
+    network = ig.Graph(n=3)
+    ground_truth_network = ig.Graph(n=3)
+
+    network.vs["name"] = ["OTU1", "OTU2", "OTU3"]
+    ground_truth_network.vs["name"] = ["OTU1", "OTU2", "OTU4"]
+
+    with pytest.raises(ValueError):
+        compare_network_edges(network, ground_truth_network)
+
+
+def test_compare_network_edges_error_different_node_order():
+    """This tests that different node orderings raise an error.
+
+    GIVEN: two networks containing the same taxa in different orders
+    WHEN: I compare the network edges
+    THEN: the function raises an error
+    """
+    network = ig.Graph(n=3)
+    ground_truth_network = ig.Graph(n=3)
+
+    network.vs["name"] = ["OTU1", "OTU2", "OTU3"]
+    ground_truth_network.vs["name"] = ["OTU2", "OTU1", "OTU3"]
+
+    with pytest.raises(ValueError):
+        compare_network_edges(network, ground_truth_network)
