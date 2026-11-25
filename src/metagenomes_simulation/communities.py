@@ -161,7 +161,9 @@ def find_communities(graph, weight_enabled=False, algorithm="louvain"):
 
 
 def compare_communities(
-    observed_community_memberships, ground_truth_community_memberships
+    observed_community_memberships,
+    ground_truth_community_memberships,
+    remove_none=True,
 ):
     """Compare two community partitions using VI, ARI, and NMI.
 
@@ -170,6 +172,10 @@ def compare_communities(
             obtained from the reconstructed network.
         ground_truth_community_memberships (list[int]): True community
             labels of the ground truth network.
+        remove_none (Bool, optional): f C{remove_none} is C{False}, a
+            C{None} entry in either C{comm1} or C{comm2} will result in an
+            exception. If C{remove_none} is C{True}, C{None} values are
+            filtered away and only the remaining lists are compared.
 
     Returns:
         dict[str, float]: Community comparison metrics: - vi: Variation of
@@ -184,19 +190,19 @@ def compare_communities(
         ground_truth_community_memberships,
         observed_community_memberships,
         method="vi",
-        remove_none=True,
+        remove_none=remove_none,
     )
     ari = ig.compare_communities(
         ground_truth_community_memberships,
         observed_community_memberships,
         method="adjusted_rand",
-        remove_none=True,
+        remove_none=remove_none,
     )
     nmi = ig.compare_communities(
         ground_truth_community_memberships,
         observed_community_memberships,
         method="nmi",
-        remove_none=True,
+        remove_none=remove_none,
     )
 
     results = {"vi": vi, "ari": ari, "nmi": nmi}
