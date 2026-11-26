@@ -1,10 +1,17 @@
-# Metagenomic Network Analysis
+# Metagenomes Simulation
 
 This project investigates how microbial interaction networks inferred from metagenomic sequencing data are affected by different data processing choices and analysis pipelines.
 
-The main objective is to study biases introduced during the construction of microbial networks, considering preprocessing steps, normalization methods, and threshold selection strategies.
+The main objective is to study biases introduced during the construction of microbial networks, considering preprocessing steps, normalization methods, and threshold selection.
 
-## How to use
+## Installation
+
+Clone the repository:
+
+```bash
+git clone https://github.com/Sanniks/Metagenomes_Simulation.git
+cd Metagenomes_Simulation
+```
 
 Install the package:
 
@@ -12,23 +19,7 @@ Install the package:
 python -m pip install -e .
 ```
 
-Show the commands:
-
-```bash
-python -m metagenomes_simulation --help
-```
-
-Prepare the processed data:
-
-```bash
-python -m metagenomes_simulation prepare-data
-```
-
-Run the tests:
-
-```bash
-pytest
-```
+Python 3.10 or later is required.
 
 ## Project Goals
 
@@ -36,7 +27,7 @@ pytest
 - Construct microbial association networks from abundance data.
 - Study how different preprocessing approaches influence inferred network topology.
 - Evaluate the impact of normalization techniques.
-- Investigate how threshold selection affects network structure and biological interpretation.
+- Investigate how threshold selection affects network structure.
 - Identify potential sources of bias introduced during data analysis.
 
 ## Dataset
@@ -68,13 +59,37 @@ The project is developed primarily in **Python** and makes use of scientific com
 
 ## Repository Structure
 
-```bash
-data/           # Input datasets
-notebooks/      # Exploratory analyses
-src/            # Source code
-tests/          # Unit tests
-docs/           # Documentation
+```text
+data/           Input and processed datasets
+notebooks/      Exploratory and reproducible analyses
+src/            Python package source code
+tests/          Unit and integration tests
+docs/           Sphinx documentation
+.github/        Continuous integration workflows
 ```
+
+## Testing
+
+Install the testing dependencies:
+
+```bash
+python -m pip install -e ".[test]"
+```
+
+Run the tests:
+
+```bash
+pytest
+```
+
+Measure test coverage:
+
+```bash
+pytest --cov=metagenomes_simulation --cov-report=term-missing
+```
+
+Continuous integration is configured through GitHub Actions,
+with automated testing on Python 3.10, 3.11, and 3.12.
 
 ## License
 
