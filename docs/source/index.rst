@@ -14,7 +14,7 @@ interaction is present.
 Project Goal
 ------------
 
-The main goal is to identify whether, and how, the construction of the
+The main goal is to identify how the construction of the
 analysis dataset introduces bias in microbial association networks.
 
 In particular, the project compares the effect of:
@@ -57,22 +57,22 @@ Euclidean geometry, while still requiring careful handling of zeros.
 Analysis Workflow
 -----------------
 
-The intended workflow is:
+The complete simulation and analysis workflow is:
 
-1. Load real metagenomic abundance data.
-2. Select a subject or subset of samples.
-3. Generate controlled variants of the real data:
-
-   * original relative abundances;
-   * noisy data;
-   * sparse data;
-   * noisy and sparse data.
-
-4. Compare raw relative and CLR-transformed abundances.
-5. Compute correlation matrices and build microbial networks with different threshold.
-7. Measure network properties across thresholds.
-8. Identify which metrics are stable and which are sensitive to dataset
-   construction choices.
+1. Generate a block-structured ground-truth correlation matrix.
+2. Generate synthetic absolute microbial abundances.
+3. Simulate metagenomic sequencing.
+4. Normalize the resulting sequencing counts.
+5. Estimate correlation matrices for each abundance representation
+   and correlation method.
+6. Compare the estimated correlation matrices with the ground truth.
+7. Construct microbial association networks across different
+   correlation thresholds.
+8. Compare the reconstructed networks with the ground-truth network.
+9. Detect communities using different community detection algorithms.
+10. Compare the detected communities with the ground-truth memberships.
+11. Analyze the reconstruction metrics across different experimental
+    conditions.
 
 Repository Structure
 --------------------
