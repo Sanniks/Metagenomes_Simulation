@@ -1,5 +1,5 @@
 import numpy as np
-
+import pandas as pd
 from metagenomes_simulation.generators import (
     create_sparse_block_correlation,
     simulate_absolute_abundances_ground_truth,
@@ -78,7 +78,7 @@ def simulate_metagenomes_pipeline(
             algorithms to evaluate. Defaults to Louvain, Leiden, Infomap,
             and Walktrap.
         num_processes (int): Number of processes used for correlation
-            estimation. Defaults to 4.
+            estimation.
         random_seed (int or None): Random seed for reproducibility.
 
     Returns:
@@ -144,11 +144,9 @@ def simulate_metagenomes_pipeline(
     }
 
     # Difference with ground-truth correlation matrix
-    error_values = {}
+    error_values = []
 
     for normalization, methods in correlations.items():
-        error_values[normalization] = {}
-
         for method, corr_matrix in methods.items():
             otu_names = corr_matrix.columns
             filtered_ground_truth = correlation_ground_truth.loc[
@@ -165,11 +163,17 @@ def simulate_metagenomes_pipeline(
             mae = np.mean(np.abs(errors_values))
             rmse = np.sqrt(np.mean(errors_values**2))
 
-            error_values[normalization][method] = {
-                "bias": bias,
-                "mae": mae,
-                "rmse": rmse,
-            }
+            error_values.append(
+                {
+                    "normalization": normalization,
+                    "method": method,
+                    "bias": bias,
+                    "mae": mae,
+                    "rmse": rmse,
+                }
+            )
+
+    error_values = pd.DataFrame(error_values)
 
     # Create ground truth network
     ground_truth_network = create_network_from_correlation_matrix(
@@ -216,35 +220,38 @@ def simulate_metagenomes_pipeline(
                 network = network.permute_vertices(new_order)
                 networks[threshold][normalization][method] = network
 
-    # Find F!, Jaccard, Recall and Precision
-    network_metrics = {}
+    # Find F1, Jaccard, Recall and Precision
+    # Compute network reconstruction metrics
+    network_metrics = []
 
     for threshold, normalizations in networks.items():
-        network_metrics[threshold] = {}
-
         for normalization, methods in normalizations.items():
-            network_metrics[threshold][normalization] = {}
-
             for method, network in methods.items():
-                network_metrics[threshold][normalization][method] = (
-                    compare_network_edges(network, ground_truth_network)
+                metrics = compare_network_edges(network, ground_truth_network)
+
+                network_metrics.append(
+                    {
+                        "threshold": threshold,
+                        "normalization": normalization,
+                        "method": method,
+                        **metrics,
+                    }
                 )
+
+    network_metrics = pd.DataFrame(network_metrics)
 
     # Compare starting communities with observed ones
     communities = {}
-    community_metrics = {}
+    community_metrics = []
 
     for threshold, normalizations in networks.items():
         communities[threshold] = {}
-        community_metrics[threshold] = {}
 
         for normalization, methods in normalizations.items():
             communities[threshold][normalization] = {}
-            community_metrics[threshold][normalization] = {}
 
             for method, network in methods.items():
                 communities[threshold][normalization][method] = {}
-                community_metrics[threshold][normalization][method] = {}
 
                 for algorithm in community_algorithms:
 
@@ -272,9 +279,17 @@ def simulate_metagenomes_pipeline(
                             ground_truth_community_memberships=true_membership,
                         )
 
-                    community_metrics[threshold][normalization][method][
-                        algorithm
-                    ] = metrics
+                    community_metrics.append(
+                        {
+                            "threshold": threshold,
+                            "normalization": normalization,
+                            "method": method,
+                            "algorithm": algorithm,
+                            **metrics,
+                        }
+                    )
+
+    community_metrics = pd.DataFrame(community_metrics)
     return {
         "correlation_ground_truth": correlation_ground_truth,
         "true_membership": true_membership,

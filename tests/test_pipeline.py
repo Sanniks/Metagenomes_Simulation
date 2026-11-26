@@ -21,10 +21,12 @@ parameters = {
     "random_seed": 1234,
 }
 
+
 # Execute pipeline only once
 @pytest.fixture(scope="module")
 def pipeline_result():
     return simulate_metagenomes_pipeline(**parameters)
+
 
 # --------------------------------------------------------------------------------------------
 # TEST simulate_metagenomes_pipeline
@@ -55,7 +57,8 @@ def test_simulate_metagenomes_pipeline_expected_keys(pipeline_result):
     }
 
     assert set(pipeline_result.keys()) == expected_keys
-    
+
+
 def test_simulate_metagenomes_pipeline_expected_dimensions(pipeline_result):
     """This tests the dimensions of the simulated data.
 
@@ -67,19 +70,18 @@ def test_simulate_metagenomes_pipeline_expected_dimensions(pipeline_result):
     n_sample = parameters["n_sample"]
 
     assert pipeline_result["correlation_ground_truth"].shape == (
-        n_taxa, n_taxa
+        n_taxa,
+        n_taxa,
     )
     assert pipeline_result["true_membership"].shape == (n_taxa,)
     assert pipeline_result["absolute_abundances_ground_truth"].shape == (
-        n_sample, n_taxa
+        n_sample,
+        n_taxa,
     )
-    assert pipeline_result["otus_absolute"].shape == (
-        n_sample, n_taxa
-    )
-    assert pipeline_result["otus_relative"].shape == (
-        n_sample, n_taxa
-    )
-    
+    assert pipeline_result["otus_absolute"].shape == (n_sample, n_taxa)
+    assert pipeline_result["otus_relative"].shape == (n_sample, n_taxa)
+
+
 def test_simulate_metagenomes_pipeline_expected_normalizations(
     pipeline_result,
 ):
@@ -92,7 +94,8 @@ def test_simulate_metagenomes_pipeline_expected_normalizations(
     expected = {"Absolute", "Relative", "CLR"}
 
     assert set(pipeline_result["correlations"].keys()) == expected
-    
+
+
 def test_simulate_metagenomes_pipeline_expected_thresholds(pipeline_result):
     """This tests that all requested thresholds are evaluated.
 
@@ -103,10 +106,11 @@ def test_simulate_metagenomes_pipeline_expected_thresholds(pipeline_result):
     expected = set(parameters["thresholds"])
 
     assert set(pipeline_result["networks"]) == expected
-    assert set(pipeline_result["network_metrics"]) == expected
+    assert set(pipeline_result["network_metrics"]["threshold"]) == expected
     assert set(pipeline_result["communities"]) == expected
-    assert set(pipeline_result["community_metrics"]) == expected
-    
+    assert set(pipeline_result["community_metrics"]["threshold"]) == expected
+
+
 def test_simulate_metagenomes_pipeline_network_node_order(pipeline_result):
     """This tests that reconstructed networks preserve the node ordering.
 
@@ -121,7 +125,8 @@ def test_simulate_metagenomes_pipeline_network_node_order(pipeline_result):
         for methods in normalizations.values():
             for network in methods.values():
                 assert network.vs["name"] == expected
-                
+
+
 def test_simulate_metagenomes_pipeline_expected_algorithms(pipeline_result):
     """This tests that all requested community algorithms are evaluated.
 
@@ -131,12 +136,9 @@ def test_simulate_metagenomes_pipeline_expected_algorithms(pipeline_result):
     """
     expected = set(parameters["community_algorithms"])
 
-    for normalizations in pipeline_result["community_metrics"].values():
-        for methods in normalizations.values():
-            for algorithms in methods.values():
-                assert set(algorithms.keys()) == expected
-                
-                
+    assert set(pipeline_result["community_metrics"]["algorithm"]) == expected
+
+
 def test_simulate_metagenomes_pipeline_valid_network_metrics(pipeline_result):
     """This tests the validity of network reconstruction metrics.
 
@@ -145,11 +147,9 @@ def test_simulate_metagenomes_pipeline_valid_network_metrics(pipeline_result):
     THEN: all edge counts are non-negative and all scores
         are between zero and one
     """
-    for normalizations in pipeline_result["network_metrics"].values():
-        for methods in normalizations.values():
-            for metrics in methods.values():
-                for key in ("tp", "fp", "fn"):
-                    assert metrics[key] >= 0
+    network_metrics = pipeline_result["network_metrics"]
+    for metric in ["f1", "jaccard", "precision", "recall"]:
+        assert network_metrics[metric].between(0, 1).all()
 
-                for key in ("precision", "recall", "f1", "jaccard"):
-                    assert 0 <= metrics[key] <= 1
+    for metric in ["tp", "fp", "fn"]:
+        assert (network_metrics[metric] >= 0).all()
