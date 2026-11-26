@@ -9,7 +9,7 @@
 project = "Metagenomes Simulation"
 copyright = "2026, Carlo Mattia Lovecchio"
 author = "Carlo Mattia Lovecchio"
-release = "0.0.2"
+release = "0.3.0"
 master_doc = "index"
 
 # -- General configuration ---------------------------------------------------
