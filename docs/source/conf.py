@@ -21,9 +21,6 @@ extensions = [
     "sphinx.ext.viewcode",
     "sphinx.ext.intersphinx",
     "sphinx_rtd_theme",
-    #'rst2pdf.pdfbuilder',
-    "nbsphinx",
-    "IPython.sphinxext.ipython_console_highlighting",
 ]
 
 templates_path = []
