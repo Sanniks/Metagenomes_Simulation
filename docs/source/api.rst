@@ -37,7 +37,7 @@ Network Construction and Comparison
    :show-inheritance:
 
 Community Detection and Comparison
----------------------------------
+----------------------------------
 
 .. automodule:: metagenomes_simulation.communities
    :members:
