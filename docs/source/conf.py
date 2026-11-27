@@ -57,7 +57,3 @@ pdf_documents = [
         "Carlo Mattia Lovecchio",
     ),
 ]
-
-nbsphinx_input_prompt = "In [%s]:"
-nbsphinx_kernel_name = "python3"
-nbsphinx_output_prompt = "Out[%s]:"
