@@ -154,7 +154,7 @@ def test_normalize_and_substitute_zeros_custom_delta_expected():
         columns=["OTU1", "OTU2", "OTU3"],
     )
     result = normalize_and_substitute_zeros(otu_df, delta=0.01)
-    
+
     expected = np.array([[0.66, 0.33, 0.01], [0.01, 0.2475, 0.7425]])
 
     np.testing.assert_allclose(result, expected)
@@ -245,10 +245,9 @@ def test_normalize_and_substitute_zeros_rejects_zero_total_sample():
         columns=["OTU1", "OTU2"],
     )
 
-    with pytest.raises(
-        ValueError
-    ):
+    with pytest.raises(ValueError):
         normalize_and_substitute_zeros(otu_df)
+
 
 @pytest.mark.parametrize("delta", [0.5, 0.6])
 def test_normalize_and_substitute_zeros_rejects_large_delta(delta):
@@ -265,7 +264,8 @@ def test_normalize_and_substitute_zeros_rejects_large_delta(delta):
 
     with pytest.raises(ValueError):
         normalize_and_substitute_zeros(otu_df, delta=delta)
-        
+
+
 # --------------------------------------------------------------------------------------------
 # TEST absolute_to_clr_abundance
 # --------------------------------------------------------------------------------------------

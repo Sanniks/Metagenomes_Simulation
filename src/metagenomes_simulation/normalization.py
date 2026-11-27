@@ -47,7 +47,7 @@ def normalize_and_substitute_zeros(otu_df, delta=None):
         raise ValueError("'delta' cannot be negative.")
     if np.any(n_zeros * delta >= 1):
         raise ValueError("delta is too large.")
-    
+
     scaling_factor = 1 - n_zeros * delta
     otu_replaced = proportions * scaling_factor
     otu_replaced[otu_replaced == 0] = delta
