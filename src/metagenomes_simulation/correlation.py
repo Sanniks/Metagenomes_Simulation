@@ -204,7 +204,6 @@ def create_correlation_matrix_parallel(
     # calculation of every correlation coefficients
     otu_combinations = combinations(range(len(otu_names)), 2)
     tasks = list(otu_combinations)
-
     # Divide the calculation in independet blocks
     n = len(tasks)  # Total number of calculations
     block_size = (n + num_processes - 1) // num_processes
@@ -214,9 +213,14 @@ def create_correlation_matrix_parallel(
     arguments_per_block = [
         (otu_data, block, correlation_method) for block in blocks
     ]
-    # Parallelization:
-    with Pool(nodes=num_processes) as pool:
-        results = pool.map(_compute_correlation_parallel, arguments_per_block)
+    if num_processes == 1:
+        results = list(map(_compute_correlation_parallel, arguments_per_block))
+    else:
+        # Parallelization:
+        with Pool(nodes=num_processes) as pool:
+            results = pool.map(
+                _compute_correlation_parallel, arguments_per_block
+            )
 
     for result in results:
         for i, j, corr_coef in result:
@@ -295,11 +299,16 @@ def measure_correlation_all_methods(otu_df, num_processes=4):
         arguments_per_block = [
             (otu_data, block, correlation_method) for block in blocks
         ]
-        # Parallelization:
-        with Pool(nodes=num_processes) as pool:
-            results = pool.map(
-                _compute_correlation_parallel, arguments_per_block
+        if num_processes == 1:
+            results = list(
+                map(_compute_correlation_parallel, arguments_per_block)
             )
+        else:
+            # Parallelization:
+            with Pool(nodes=num_processes) as pool:
+                results = pool.map(
+                    _compute_correlation_parallel, arguments_per_block
+                )
 
         for result in results:
             for i, j, corr_coef in result:
