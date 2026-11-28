@@ -8,7 +8,9 @@ from metagenomes_simulation.generators import (
 from metagenomes_simulation.normalization import (
     normalize_abundance_all_methods,
 )
-from metagenomes_simulation.correlation import measure_correlation_all_methods
+from metagenomes_simulation.correlation import (
+    create_correlation_matrix_all_methods,
+)
 from metagenomes_simulation.network import (
     create_network_from_correlation_matrix,
     compare_network_edges,
@@ -31,7 +33,6 @@ def simulate_metagenomes_pipeline(
     threshold_mode,
     binary_network,
     community_algorithms,
-    num_processes,
     random_seed,
 ):
     """Run the complete simulated metagenomics analysis pipeline.
@@ -77,7 +78,7 @@ def simulate_metagenomes_pipeline(
         community_algorithms (tuple[str, ...]): Community detection
             algorithms to evaluate. Defaults to Louvain, Leiden, Infomap,
             and Walktrap.
-        num_processes (int): Number of processes used for correlation
+         (int): Number of processes used for correlation
             estimation.
         random_seed (int or None): Random seed for reproducibility.
 
@@ -127,15 +128,9 @@ def simulate_metagenomes_pipeline(
     otus_clr = normalized["clr"]
 
     # Calculate correlation matrices
-    absolute_corr = measure_correlation_all_methods(
-        otus_absolute, num_processes=num_processes
-    )
-    relative_corr = measure_correlation_all_methods(
-        otus_relative, num_processes=num_processes
-    )
-    clr_corr = measure_correlation_all_methods(
-        otus_clr, num_processes=num_processes
-    )
+    absolute_corr = create_correlation_matrix_all_methods(otus_absolute)
+    relative_corr = create_correlation_matrix_all_methods(otus_relative)
+    clr_corr = create_correlation_matrix_all_methods(otus_clr)
 
     correlations = {
         "Absolute": absolute_corr,
@@ -185,8 +180,9 @@ def simulate_metagenomes_pipeline(
     )
 
     # Create networks with different thresholds
+    thresholds = sorted(thresholds)
     networks = {}
-
+    empty_networks = {}
     for threshold in thresholds:
         networks[threshold] = {}
 
@@ -194,6 +190,15 @@ def simulate_metagenomes_pipeline(
             networks[threshold][normalization] = {}
 
             for method, corr_matrix in corr.items():
+                key = (normalization, method)
+
+                # Reuse empty network
+                if key in empty_networks:
+                    networks[threshold][normalization][method] = (
+                        empty_networks[key]
+                    )
+                    continue
+
                 network = create_network_from_correlation_matrix(
                     corr_matrix,
                     threshold,
@@ -218,16 +223,34 @@ def simulate_metagenomes_pipeline(
                     new_order.append(index)
 
                 network = network.permute_vertices(new_order)
+
+                # Cache empty network
+                if network.ecount() == 0:
+                    empty_networks[key] = network
+
                 networks[threshold][normalization][method] = network
 
     # Find F1, Jaccard, Recall and Precision
     # Compute network reconstruction metrics
     network_metrics = []
+    empty_network_metrics = None
 
     for threshold, normalizations in networks.items():
         for normalization, methods in normalizations.items():
             for method, network in methods.items():
-                metrics = compare_network_edges(network, ground_truth_network)
+
+                if network.ecount() == 0:
+
+                    if empty_network_metrics is None:
+                        empty_network_metrics = compare_network_edges(
+                            network, ground_truth_network
+                        )
+
+                    metrics = empty_network_metrics
+                else:
+                    metrics = compare_network_edges(
+                        network, ground_truth_network
+                    )
 
                 network_metrics.append(
                     {
@@ -243,6 +266,7 @@ def simulate_metagenomes_pipeline(
     # Compare starting communities with observed ones
     communities = {}
     community_metrics = []
+    empty_communities = {}
 
     for threshold, normalizations in networks.items():
         communities[threshold] = {}
@@ -254,31 +278,36 @@ def simulate_metagenomes_pipeline(
                 communities[threshold][normalization][method] = {}
 
                 for algorithm in community_algorithms:
+                    key = (normalization, method, algorithm)
+                    if network.ecount() == 0 and key in empty_communities:
+                        partition, metrics = empty_communities[key]
+                    else:
+                        # Community detection
+                        partition = find_communities(
+                            network,
+                            weight_enabled=not binary_network,
+                            algorithm=algorithm,
+                        )
 
-                    # Community detection
-                    partition = find_communities(
-                        network,
-                        weight_enabled=not binary_network,
-                        algorithm=algorithm,
-                    )
+                        # Community comparison
+                        if partition is None:
+                            metrics = {
+                                "vi": np.nan,
+                                "ari": np.nan,
+                                "nmi": np.nan,
+                            }
+                        else:
+                            metrics = compare_communities(
+                                observed_community_memberships=partition.membership,
+                                ground_truth_community_memberships=true_membership,
+                            )
+                        # Cache empty network results
+                        if network.ecount() == 0:
+                            empty_communities[key] = (partition, metrics)
 
                     communities[threshold][normalization][method][
                         algorithm
                     ] = partition
-
-                    # Community comparison
-                    if partition is None:
-                        metrics = {
-                            "vi": np.nan,
-                            "ari": np.nan,
-                            "nmi": np.nan,
-                        }
-                    else:
-                        metrics = compare_communities(
-                            observed_community_memberships=partition.membership,
-                            ground_truth_community_memberships=true_membership,
-                        )
-
                     community_metrics.append(
                         {
                             "threshold": threshold,

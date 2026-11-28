@@ -17,7 +17,6 @@ parameters = {
     "binary_network": True,
     "community_algorithms": ("louvain", "leiden", "infomap", "walktrap"),
     # Computational parameters
-    "num_processes": 1,
     "random_seed": 1234,
 }
 
